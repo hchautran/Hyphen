@@ -18,6 +18,8 @@ from hyphen import Hyphen
 from utils.dataset import FakeNewsDataset
 from utils.utils import get_evaluation
 
+
+
 class HyphenModel():
     def __init__(self, platform, max_sen_len, max_com_len, max_sents, max_coms, manifold, log_path, lr, content_module, comment_module, fourier):
         self.model = None
@@ -32,7 +34,8 @@ class HyphenModel():
         self.sentence_comment_co_model = None
         self.tokenizer = None
         self.metrics = Metrics()
-        self.device = torch.device('cuda') if torch.cuda.is_available() else torch.device("cpu")
+        self.device = torch.device('cuda:1') if torch.cuda.is_available() else torch.device("cpu")
+        #print(self.device)
         self.log_path = log_path
         self.manifold = manifold
         self.lr = lr
@@ -78,7 +81,7 @@ class HyphenModel():
         '''
         embeddings_index = {}
 
-        self.glove_dir = "{GLOVE EMBEDDING PATH}"# modify glove embedding path
+        self.glove_dir = f"{os.getcwd()}/glove.6B.100d.txt"# modify glove embedding path
 
         f = open(self.glove_dir, encoding="utf-8")
         for line in f:
@@ -235,6 +238,9 @@ class HyphenModel():
         clip = 5#modify clip
 
         best_f1 = 0.0
+        best_precision=0.0
+        best_recall=0.0
+        best_acc=0.0
 
         for epoch in range(epochs):
             print('Epoch {}/{}'.format(epoch, epochs - 1))
@@ -300,7 +306,8 @@ class HyphenModel():
                 torch.save(self.model.state_dict(), f'{dst_dir}best_model_{self.manifold}.pt')
                 best_model = self.model
                 best_f1 = f1
-
+               
+                
             te_loss = sum(loss_ls) / total_samples
             self.writer.add_scalar('Test/Loss', te_loss, epoch)
             self.writer.add_scalar('Test/Accuracy', acc_, epoch)

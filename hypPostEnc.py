@@ -51,8 +51,10 @@ class HypPostEnc(nn.Module):
         self.word_hidden_state = torch.zeros(2, batch_size, self.word_hidden_size)
         self.sent_hidden_state = torch.zeros(2, batch_size, self.sent_hidden_size)
         if torch.cuda.is_available() and self.device != torch.device("cpu"):
-            self.word_hidden_state = self.word_hidden_state.cuda()
-            self.sent_hidden_state = self.sent_hidden_state.cuda()
+            #print(self.device)
+            
+            self.word_hidden_state = self.word_hidden_state.to(self.device)
+            self.sent_hidden_state = self.sent_hidden_state.to(self.device)
 
     def forward(self, input):
         output_list = []

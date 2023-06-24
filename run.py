@@ -1,10 +1,11 @@
 import os
-os.environ['CUDA_VISIBLE_DEVICES'] = "2"
+#os.environ['CUDA_VISIBLE_DEVICES'] = "0"
 import pickle
 import argparse
 import pickle
 parser = argparse.ArgumentParser()
 from main import HyphenModel
+from dgl import heterograph
 
 parser.add_argument('--manifold', choices=['PoincareBall', 'Euclidean'], default = 'PoincareBall', help='Choose the underlying manifold for Hyphen')
 parser.add_argument('--no-fourier', default=True, action='store_false', help='If you want to remove the Fourier sublayer from Hyphen\'s co-attention module.')
@@ -22,7 +23,7 @@ parser.add_argument('--epochs', type = int, default= 5, help='The number of epoc
 
 args = parser.parse_args()
 
-file = open(f'data/{args.dataset}_preprocessed.pkl', 'rb')
+file = open(f'data/{args.dataset}/{args.dataset}_preprocessed.pkl', 'rb')
 props = pickle.load(file)
 
 id_train, id_test = props['train']['id'], props['val']['id']

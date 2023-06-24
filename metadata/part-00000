@@ -1,0 +1,1 @@
+{"class":"com.johnsnowlabs.nlp.embeddings.WordEmbeddingsModel","timestamp":1579690104033,"sparkVersion":"2.4.3","uid":"WORD_EMBEDDINGS_MODEL_48cffc8b9a76","paramMap":{"inputCols":["sentence","token"],"storageRef":"glove_100d","caseSensitive":false,"outputCol":"embeddings","dimension":100},"defaultParamMap":{"storageRef":"WORD_EMBEDDINGS_3c98850fcb6e","caseSensitive":false}}

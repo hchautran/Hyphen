@@ -5,12 +5,12 @@ import torch.nn as nn
 from utils.layers.hyp_layers import *
 from utils.manifolds import PoincareBall
 
-class HypComEnc(nn.Module):
+class   HypComEnc(nn.Module):
     def __init__(self, in_dim, hidden_dim, n_classes, max_comment_count, device, manifold, content_module, comment_curvature):
         super(HypComEnc, self).__init__()
         self.manifold = manifold
         self.c = comment_curvature
-        self.conv1 = HGCNLayer(self.manifold, in_dim, hidden_dim, c_in = self.c, c_out = self.c , act = torch.tanh, dropout = 0.1, use_bias = True)
+        self.conv1 =  HGCNLayer(self.manifold, in_dim, hidden_dim, c_in = self.c, c_out = self.c , act = torch.tanh, dropout = 0.1, use_bias = True)
         self.conv2 = HGCNLayer(self.manifold, hidden_dim, hidden_dim, c_in = self.c , c_out = self.c , act = torch.tanh, dropout = 0.1, use_bias = True)
         self.max_comment_count = max_comment_count
         self.hidden_dim = hidden_dim
@@ -32,7 +32,8 @@ class HypComEnc(nn.Module):
 
         out, adj = self.conv1((inp, adj))
         out, adj = self.conv2((out, adj))
-        h = out.to_dense()#converting back to dense
+        #print(out)
+        h = out#converting back to dense
         h = self.manifold.logmap0(self.manifold.proj(h, c = self.c), c = self.c)
         #map h (which is in poincare space/euclidean) to tangential space to aggregate the node representations
         if self.content_module:

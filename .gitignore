@@ -130,3 +130,8 @@ dmypy.json
 
 data/*_preprocessed.pkl
 amr_data/**/*.pkl
+hyphen/*
+data/*
+logging/*
+glove.6B.100d.txt
+storage/*
