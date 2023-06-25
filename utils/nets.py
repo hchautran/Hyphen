@@ -306,3 +306,4 @@ class MobiusGRU(torch.nn.Module):
             "hyperbolic_hidden_state0={hyperbolic_hidden_state0}, "
             "c={ball.c}"
         ).format(**self.__dict__, self=self, bias=self.bias is not None, ball = self.ball)
+

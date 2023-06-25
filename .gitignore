@@ -135,3 +135,4 @@ data/*
 logging/*
 glove.6B.100d.txt
 storage/*
+saved_models/*
