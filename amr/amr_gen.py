@@ -4,9 +4,10 @@ import matplotlib.pyplot as plt
 import glob
 import amrlib
 import os
+import torch
 import warnings
 warnings.filterwarnings("ignore")
-os.environ['CUDA_VISIBLE_DEVICES']= "2"
+
 import argparse
 parser = argparse.ArgumentParser()
 
@@ -16,8 +17,10 @@ parser.add_argument('--max-comments', type = int, default = 50, help = "Specify 
 
 # Parse the argument
 args = parser.parse_args()
-
-stog = amrlib.load_stog_model()
+print(torch.__version__)
+print('is cuda available', torch.cuda.is_available())
+device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+stog = amrlib.load_stog_model(device=device)
 print("Loaded stog")
 df = pd.read_csv(f'data/{args.dataset}/{args.dataset}.csv')
 df['comments'] = df['comments'].fillna(" ")

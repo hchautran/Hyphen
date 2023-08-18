@@ -8,15 +8,15 @@ from torch import nn
 from torch import optim
 from torch.utils.data import DataLoader
 import numpy as np
-from keras_preprocessing import text as Text
+import keras_preprocessing
 import tqdm
 import dgl
+from tensorboardX import SummaryWriter
 from utils.radam import RiemannianAdam
 from utils.metrics import Metrics
 from hyphen import Hyphen
 from utils.dataset import FakeNewsDataset
 from utils.utils import get_evaluation
-import wandb
 
 
 
@@ -35,7 +35,7 @@ class HyphenModel():
         self.tokenizer = None
         self.metrics = Metrics()
         self.device = torch.device('cuda:1') if torch.cuda.is_available() else torch.device("cpu")
-        #print(self.device)
+        print(self.device)
         self.log_path = log_path
         self.manifold = manifold
         self.lr = lr
@@ -43,16 +43,6 @@ class HyphenModel():
         self.comment_module = comment_module
         self.fourier = fourier
         self.platform = platform
-        self.enable_log = False
-        if self.enable_log:
-            self.wandb = wandb(
-                project = "Hyphen-v2",
-                config={
-                'learning rate': lr, 
-                'fourier': fourier, 
-                'coattention': True, 
-                }
-            )
         
     def _fit_on_texts(self, train_x, val_x):
         """
@@ -61,7 +51,7 @@ class HyphenModel():
         texts = []
         texts.extend(train_x)
         texts.extend(val_x)
-        self.tokenizer = Text.Tokenizer(num_words=30000)
+        self.tokenizer = keras_preprocessing.text.Tokenizer(num_words=30000)
         all_text = []
 
         all_sentences = []
@@ -90,32 +80,38 @@ class HyphenModel():
             This function is used to build Hyphen model.
         '''
         embeddings_index = {}
+        
 
-        self.glove_dir = f"{os.getcwd()}/glove.twitter.27B.100d.txt"# modify glove embedding path
+        self.glove_dir = "glove.twitter.27B.100d.txt"
+      
 
         f = open(self.glove_dir, encoding="utf-8")
+      
         for line in f:
             values = line.split()
             word = values[0]
             coefs = np.asarray(values[1:], dtype='float32')
             embeddings_index[word] = coefs
+       
         f.close()
 
         # get word index
         word_index = self.tokenizer.word_index
         embedding_matrix = np.random.random((len(word_index)+1, embedding_dim))
+     
 
         # create embedding matrix.
         for word, i in word_index.items():
             embedding_vector = embeddings_index.get(word)
             if embedding_vector is not None:
                 embedding_matrix[i] = embedding_vector
-
+   
         self.word_hidden_size, self.sent_hidden_size, self.max_sent_length, self.max_word_length, self.graph_hidden= 50, 50, 50, 50, 100
         model = Hyphen(embedding_matrix, self.word_hidden_size, self.sent_hidden_size, self.max_sent_length, self.max_word_length, 
         self.device, graph_hidden = self.graph_hidden, batch_size = batch_size, num_classes = n_classes, max_comment_count= self.max_coms,
         max_sentence_count=self.max_sents, manifold = self.manifold, comment_module = self.comment_module,
         content_module = self.content_module, fourier = self.fourier)
+        print('Hyphen built')
 
         model = model.to(self.device)
 
@@ -202,14 +198,10 @@ class HyphenModel():
             Ac_batch.extend(Ac.detach().cpu().numpy())
             predictions_batch.extend(predictions.detach().cpu().numpy())
         return predictions_batch, As_batch, Ac_batch
-    
-    def log(self, stats):
-        if self.enable_log:
-            wandb.log(stats)
-            
-
 
     def train(self, train_x, train_y, train_c, val_c, val_x, val_y, sub_train, sub_val, batch_size=9, epochs=5):
+
+        self.writer = SummaryWriter(self.log_path)
 
         # Fit the vocabulary set on the content and comments
         self._fit_on_texts(train_x, val_x)
@@ -241,6 +233,7 @@ class HyphenModel():
         #train model for given epoch
         self.run_epoch(epochs)
 
+        self.writer.close()
 
     def run_epoch(self, epochs):
         '''
@@ -277,13 +270,9 @@ class HyphenModel():
                 self.optimizer.step()
 
                 training_metrics = get_evaluation(torch.max(label, 1)[1].cpu().numpy(), predictions.cpu().detach().numpy(), list_metrics=["accuracy"])
-                stat = {
-                    'Train/epoch': epoch * num_iter_per_epoch + iter,
-                    'Train/Loss':loss,
-                    'Train/Accuracy': training_metrics["accuracy"],
-                    
-                }
-                self.log(stat)
+                self.writer.add_scalar('Train/Loss', loss, epoch * num_iter_per_epoch + iter)
+                self.writer.add_scalar('Train/Accuracy', training_metrics["accuracy"], epoch * num_iter_per_epoch + iter)
+            
 
             self.model.eval()
             loss_ls= []
@@ -326,13 +315,9 @@ class HyphenModel():
                
                 
             te_loss = sum(loss_ls) / total_samples
-            eval_stat = {
-                'Test/epoch': epoch,
-                'Test/Accuracy': acc_,
-                'Test/F1': f1,
-                'Test/Loss': te_loss 
-            }
-            self.log(eval_stat)
+            self.writer.add_scalar('Test/Loss', te_loss, epoch)
+            self.writer.add_scalar('Test/Accuracy', acc_, epoch)
+            self.writer.add_scalar('Test/F1', f1, epoch)
         
         print(f"Best F1: {best_f1}")
         print("Training  end")

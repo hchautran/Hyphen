@@ -41,6 +41,7 @@ class HypPostEnc(nn.Module):
             self.word_att_net = H_WordAttNet(embedding_matrix, word_hidden_size)
             self.sent_att_net = H_SentAttNet(sent_hidden_size, word_hidden_size, num_classes, self.content_curvature)
         
+        
         self._init_hidden_state()
         
     def _init_hidden_state(self, last_batch_size=None):
@@ -50,11 +51,11 @@ class HypPostEnc(nn.Module):
             batch_size = self.batch_size
         self.word_hidden_state = torch.zeros(2, batch_size, self.word_hidden_size)
         self.sent_hidden_state = torch.zeros(2, batch_size, self.sent_hidden_size)
-        if torch.cuda.is_available() and self.device != torch.device("cpu"):
-            #print(self.device)
-            
-            self.word_hidden_state = self.word_hidden_state.to(self.device)
-            self.sent_hidden_state = self.sent_hidden_state.to(self.device)
+        print('current device:', self.device)
+        
+        self.word_hidden_state = self.word_hidden_state.to(self.device)
+        self.sent_hidden_state = self.sent_hidden_state.to(self.device)
+
 
     def forward(self, input):
         output_list = []
