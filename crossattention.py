@@ -8,7 +8,7 @@ class CrossAttention(nn.Module):
     """This is the class for Hyperbolic Fourier-coattention mechanism."""
     
     def __init__(self, device,latent_dim = 100,  embedding_dim = 100, manifold = None, content_curvature = None, comment_curvature = None, combined_curvature = None, fourier = False):
-        super(CoAttention, self).__init__()
+        super(CrossAttention, self).__init__()
 
         self.content_curvature = content_curvature
         self.comment_curvature = comment_curvature

@@ -2,8 +2,8 @@ import itertools
 import torch.nn
 import torch.nn.functional
 import math
-import geoopt.manifolds.poincare.math as pmath
 import geoopt
+import geoopt.manifolds.stereographic.math as pmath
 
 
 def mobius_linear(

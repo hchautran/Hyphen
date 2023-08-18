@@ -133,6 +133,6 @@ amr_data/**/*.pkl
 hyphen/*
 data/*
 logging/*
-glove.6B.100d.txt
+glove.*.txt
 storage/*
 saved_models/*
