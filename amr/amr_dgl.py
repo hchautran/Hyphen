@@ -37,7 +37,7 @@ def var2word(p_graph):
 
 def get_glove():
     glove = {}
-    f = open('{GLOVE_EMBEDDING_PATH}')#**************Specify glove embedding path*************
+    f = open('glove.twitter.27B.100d.txt')#**************Specify glove embedding path*************
     for line in f:
         values = line.split()
         word = values[0]

@@ -19,7 +19,9 @@ parser.add_argument('--max-comments', type = int, default = 50, help = "Specify 
 args = parser.parse_args()
 print(torch.__version__)
 print('is cuda available', torch.cuda.is_available())
-device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+device = torch.device('cuda:1' if torch.cuda.is_available() else 'cpu')
+
+
 stog = amrlib.load_stog_model(device=device)
 print("Loaded stog")
 df = pd.read_csv(f'data/{args.dataset}/{args.dataset}.csv')

@@ -11,6 +11,8 @@ import pickle
 import os
 import argparse
 parser = argparse.ArgumentParser()
+import en_core_web_sm
+nlp = en_core_web_sm.load()
 
 # Adding the required arguments
 parser.add_argument('--dataset', choices = ['antivax', 'politifact', 'gossipcop', 'figlang_twitter', 'figlang_reddit', 'twitter16', 'rumoureval', 'pheme', 'twitter15', 'hasoc'], help='Specify the dataset for which you want to run the experiments.')
@@ -95,23 +97,23 @@ for q in amr_list:
     print("Processing", q, end = " ")
     # modify all Comment AMRs belonging to one news article
     modified_amr_list = []
-    try:
-        for i, j in df.iterrows():
-            var_mod = modify_variables(j['amr'], i+1)
-            name = q[q.rfind('/')+1:q.rfind('.')]
-            modified_amr_list.append(var_mod)
+    # try:
+    for i, j in df.iterrows():
+        var_mod = modify_variables(j['amr'], i+1)
+        name = q[q.rfind('/')+1:q.rfind('.')]
+        modified_amr_list.append(var_mod)
         
-        dst_dir = f'data/{args.dataset}/{args.dataset}_amr_coref/{name}.amr.penman'
-        os.makedirs(os.path.dirname(dst_dir), exist_ok=True)
-        penman.dump(modified_amr_list, dst_dir, model = NoOpModel())
+    dst_dir = f'data/{args.dataset}/{args.dataset}_amr_coref/{name}.amr.penman'
+    os.makedirs(os.path.dirname(dst_dir), exist_ok=True)
+    penman.dump(modified_amr_list, dst_dir, model = NoOpModel())
     
-    except AssertionError:
-        print("**************Ignoring the file {}******************".format(q))
-        ignored.append(q)
+#     except AssertionError:
+#         print("**************Ignoring the file {}******************".format(q))
+#         ignored.append(q)
 
-    except:
-        print("**************Ignoring the file decode error{}******************".format(q))
-        ignored.append(q)
+#     except:
+#         print("**************Ignoring the file decode error{}******************".format(q))
+#         ignored.append(q)
 
     lv+=1 
     print("Done", lv, len(modified_amr_list))

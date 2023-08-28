@@ -19,6 +19,7 @@ def get_data(DATA):
         contents, comments, labels, ids, subgraphs= [], [], [], [], []
         for idx in range(len(data)):
             try:
+                # print(data)
                 text = data[idx]['content']
                 contents.append(tokenize.sent_tokenize(text))
                 ids.append(data[idx]['id'])

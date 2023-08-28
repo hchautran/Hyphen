@@ -9,7 +9,6 @@ import json
 import argparse
 os.environ['CUDA_VISIBLE_DEVICES'] = "1"
 
-
 def parse_default_args():
     parser = argparse.ArgumentParser(description='AMR_Coref')
     parser.add_argument('--dataset', type=str, default='politifact')
@@ -32,6 +31,7 @@ def write_json(new_data, p_name, filename):
         json.dump(file_data, file, indent = 4)
 
 if __name__ == '__main__':
+
 
     args = parse_default_args()
 

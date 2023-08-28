@@ -5,7 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.nn.init as init
 from torch.nn.modules.module import Module
-
+from torch_sparse import spmm
 
 class HGCNLayer(nn.Module):
     """
@@ -80,7 +80,9 @@ class HypAgg(Module):
 
     def forward(self, x, adj):
         x_tangent = self.manifold.logmap0(x, c=self.c)
-        support_t = torch.spmm(adj, x_tangent)
+
+     
+        support_t = torch.mm(adj.to_dense(), x_tangent)
         output = self.manifold.proj(self.manifold.expmap0(support_t, c=self.c), c=self.c)
         return output
 
