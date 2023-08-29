@@ -45,7 +45,7 @@ class HyphenModel:
         self.tokenizer = None
         self.metrics = Metrics()
         self.device = (
-            torch.device("cuda:1") if torch.cuda.is_available() else torch.device("cpu")
+            torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
         )
         self.manifold = manifold
         self.lr = lr
@@ -53,19 +53,21 @@ class HyphenModel:
         self.comment_module = comment_module
         self.fourier = fourier
         self.platform = platform
-        self.wandb = wandb
-        self.log_enable = False 
+     
+        self.log_enable = True 
         if self.log_enable:
-            self.wandb.init(
-                project='Hyphen-v2',
+            wandb.init(
+                project='Hyphen',
+                name=platform,
                 config={
-                    'type': 'Hybrid' 
+                    'dataset': platform,
+                    'type': manifold
                 }
             )
 
     def log(self, stats):
         if self.log_enable:
-            self.wandb.log(stats)
+            wandb.log(stats)
             
 
     def _fit_on_texts(self, train_x, val_x):
@@ -101,7 +103,6 @@ class HyphenModel:
 
         training_corpus = get_training_corpus()
 
-        
         self.tokenizer.train_from_iterator(training_corpus, trainer=trainer)
         self.vocab_size = self.tokenizer.get_vocab_size()
         self.tokenizer.save("tokenizer.json")
