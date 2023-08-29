@@ -15,7 +15,7 @@ from hyphen import Hyphen
 from utils.dataset import FakeNewsDataset
 from utils.utils import get_evaluation
 import wandb
-from tokenizers import Tokenizer 
+from tokenizers import Tokenizer, models, normalizers, pre_tokenizers, decoders, trainers
 
 
 class HyphenModel:
@@ -75,26 +75,35 @@ class HyphenModel:
         texts = []
         texts.extend(train_x)
         texts.extend(val_x)
-        print(texts)
-        tokenizer = Tokenizer.from_pretrained('bert-base-cased')
+        special_tokens = ['<s>', '</s>', '<unk>', '<pad>', '<sep>']
+        self.tokenizer = Tokenizer(models.BPE())
+        self.tokenizer.pre_tokenizer = pre_tokenizers.ByteLevel()
+        self.tokenizer.normalizer = normalizers.NFKC()
+        self.tokenizer.decoders = decoders.ByteLevel()
 
+        trainer = trainers.BpeTrainer(
+            vocab_size=30000,
+            min_frequency=2,
+            special_tokens=special_tokens
+        )
+        
         all_sentences = []
         for text in texts:
             for sentence in text:
                 all_sentences.append(sentence)
         
         def get_training_corpus():
-            dataset = all_sentences["train"]
-            for start_idx in range(0, len(dataset), 1000):
-                samples = dataset[start_idx : start_idx + 1000]
-                yield samples["whole_func_string"]
+            for start_idx in range(0, len(all_sentences), 1000):
+                samples = all_sentences[start_idx : start_idx + 1000]
+                yield samples
 
 
         training_corpus = get_training_corpus()
 
-        self.tokenizer = tokenizer.train_new_from_iterator(training_corpus, 30000)
-        self.vocab_size = len(self.tokenizer.word_index) + 1
-        self.tokenizer.save_pretrained("Hyphen-tokenizer")
+        
+        self.tokenizer.train_from_iterator(training_corpus, trainer=trainer)
+        self.vocab_size = self.tokenizer.get_vocab_size()
+        self.tokenizer.save("tokenizer.json")
         print("saved tokenizer")
 
 
@@ -114,11 +123,12 @@ class HyphenModel:
             word = values[0]
             coefs = np.asarray(values[1:], dtype="float32")
             embeddings_index[word] = coefs
+            
 
         f.close()
 
         # get word index
-        word_index = self.tokenizer.word_index
+        word_index = self.tokenizer.get_vocab()
         embedding_matrix = np.random.random((len(word_index) + 1, embedding_dim))
 
         # create embedding matrix.
@@ -170,18 +180,21 @@ class HyphenModel:
         :param texts:
         :return:
         """
-        encoded_texts = np.zeros(
-            (len(texts), self.max_sents, self.max_sen_len), dtype="int32"
-        )
-        for i, text in enumerate(texts):
-            encoded_text = np.array(
-                torch.nn.utils.rnn.pad_sequence(
-                    self.tokenizer.texts_to_sequences(text),
-                    maxlen=self.max_sen_len,
-                    padding_value=0,
-                )
-            )[: self.max_sents]
-            encoded_texts[i][: len(encoded_text)] = encoded_text
+        encoded_texts = self.tokenizer.encode_batch(texts)
+        print(encoded_texts)
+        # encoded_texts = np.zeros(
+        #     (len(texts), self.max_sents, self.max_sen_len), dtype="int32"
+        # )
+        # for i, text in enumerate(texts):
+        #     print(text)
+        #     encoded_text = np.array(
+        #         torch.nn.utils.rnn.pad_sequence(
+        #             self.tokenizer.texts_to_sequences(text),
+        #             maxlen=self.max_sen_len,
+        #             padding_value=0,
+        #         )
+        #     )[: self.max_sents]
+        #     encoded_texts[i][: len(encoded_text)] = encoded_text
 
         return encoded_texts
 
