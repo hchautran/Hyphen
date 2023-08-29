@@ -80,6 +80,7 @@ class HyphenModel:
         self.tokenizer.pre_tokenizer = pre_tokenizers.ByteLevel()
         self.tokenizer.normalizer = normalizers.NFKC()
         self.tokenizer.decoders = decoders.ByteLevel()
+        self.tokenizer.enable_padding(pad_id=0, pad_token="<pad>")
 
         trainer = trainers.BpeTrainer(
             vocab_size=30000,
@@ -180,23 +181,23 @@ class HyphenModel:
         :param texts:
         :return:
         """
-        encoded_texts = self.tokenizer.encode_batch(texts)
-        print(encoded_texts)
-        # encoded_texts = np.zeros(
-        #     (len(texts), self.max_sents, self.max_sen_len), dtype="int32"
-        # )
-        # for i, text in enumerate(texts):
-        #     print(text)
-        #     encoded_text = np.array(
-        #         torch.nn.utils.rnn.pad_sequence(
-        #             self.tokenizer.texts_to_sequences(text),
-        #             maxlen=self.max_sen_len,
-        #             padding_value=0,
-        #         )
-        #     )[: self.max_sents]
-        #     encoded_texts[i][: len(encoded_text)] = encoded_text
+        encoded_texts = np.zeros((len(texts), self.max_sents, self.max_sen_len), dtype='int32')
+        print(encoded_texts.shape)
+        for i, text in enumerate(texts):
+            ids = [item.ids for item in self.tokenizer.encode_batch(text)]
+            encoded_text = np.array(
+                torch.nn.functional.pad(
+                    torch.tensor(ids),
+                    pad=(0, self.max_sen_len - torch.tensor(ids).shape[1]), 
+                    mode='constant', 
+                    value=0
+                )
+            )[:self.max_sents]
+            
+            encoded_texts[i][:len(encoded_text)] = encoded_text
 
         return encoded_texts
+
 
     def test(
         self,
@@ -328,6 +329,7 @@ class HyphenModel:
         print("Encoding texts....")
         # Create encoded input for content and comments
         encoded_train_x = self._encode_texts(train_x)
+        print(encoded_train_x.shape)
         encoded_val_x = self._encode_texts(val_x)
         print("preparing dataset....")
 
@@ -421,7 +423,7 @@ class HyphenModel:
                     predictions.cpu().detach().numpy(),
                     list_metrics=["accuracy"],
                 )
-                wandb.log({
+                self.log({
                     "Train/Loss": loss, 
                     "Epoch": epoch * num_iter_per_epoch + iter,
                     "Train/Accuracy":training_metrics["accuracy"],
@@ -468,9 +470,13 @@ class HyphenModel:
                 best_f1 = f1
 
             te_loss = sum(loss_ls) / total_samples
-            self.writer.add_scalar("Test/Loss", te_loss, epoch)
-            self.writer.add_scalar("Test/Accuracy", acc_, epoch)
-            self.writer.add_scalar("Test/F1", f1, epoch)
+            self.log({
+                "Test/epoch": epoch,
+                "Test/Loss": te_loss,
+                "Test/Accuracy": acc_,
+                "Test/F1": f1,
+                
+            })
 
         print(f"Best F1: {best_f1}")
         print("Training  end")
@@ -495,7 +501,7 @@ class HyphenModel:
                     wd_idx = sen[j]
                     if wd_idx == 0:
                         continue
-                    wd = self.reverse_word_index[wd_idx]
+                    wd = self.tokenizer.decode(wd_idx)
                     no_pad_sen_att.append((wd, content_word_level_attentions[k][i][j]))
 
                 tmp_no_pad_text_att.append(
@@ -539,7 +545,7 @@ class HyphenModel:
                     wd_idx = sen[j]
                     if wd_idx == 0:
                         continue
-                    wd = self.reverse_word_index[wd_idx]
+                    wd = self.tokenizer.decode[wd_idx]
                     no_pad_sen_att.append(wd)
                 tmp_no_pad_text_att.append(
                     (no_pad_sen_att, sentence_co_attention[k][i])
