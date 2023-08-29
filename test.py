@@ -1,4 +1,5 @@
 import torch
+from hyptorch.models.clip import HypCLIPTextTransformer
 
 
 def test():
@@ -9,4 +10,5 @@ def test():
 
 
 if __name__ == "__main__":
-    print(test())
+    
+

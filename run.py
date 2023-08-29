@@ -32,7 +32,8 @@ y_train, y_val = props['train']['y'], props['val']['y']
 c_train, c_val = props['train']['c'], props['val']['c']
 sub_train, sub_val = props['train']['subgraphs'], props['val']['subgraphs']
 
-hyphen = HyphenModel(args.dataset, args.max_sent_len, args.max_com_len, args.max_sents, args.max_coms, manifold= args.manifold, lr = args.lr, log_path=args.log_path,
+
+hyphen = HyphenModel(args.dataset, args.max_sent_len, args.max_com_len, args.max_sents, args.max_coms, manifold= args.manifold, lr = args.lr, 
 comment_module =args.no_comment, content_module = args.no_content, fourier = args.no_fourier)
 
-hyphen.train(x_train, y_train, c_train, c_val, x_val, y_val, sub_train, sub_val, batch_size= args.batch_size, epochs=args.epochs)
+# hyphen.train(x_train, y_train, c_train, c_val, x_val, y_val, sub_train, sub_val, batch_size= args.batch_size, epochs=args.epochs)

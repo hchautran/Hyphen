@@ -5,7 +5,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.nn.init as init
 from torch.nn.modules.module import Module
-from torch_sparse import spmm
 
 class HGCNLayer(nn.Module):
     """

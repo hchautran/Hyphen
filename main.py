@@ -2,21 +2,20 @@ import os
 import time
 import gc
 import pickle
-from tensorflow.keras.preprocessing.sequence import pad_sequences
 import torch
 from torch import nn
 from torch import optim
 from torch.utils.data import DataLoader
 import numpy as np
-import keras_preprocessing
 import tqdm
 import dgl
-from tensorboardX import SummaryWriter
 from utils.radam import RiemannianAdam
 from utils.metrics import Metrics
 from hyphen import Hyphen
 from utils.dataset import FakeNewsDataset
 from utils.utils import get_evaluation
+import wandb
+from tokenizers import Tokenizer 
 
 
 class HyphenModel:
@@ -28,7 +27,6 @@ class HyphenModel:
         max_sents,
         max_coms,
         manifold,
-        log_path,
         lr,
         content_module,
         comment_module,
@@ -49,14 +47,26 @@ class HyphenModel:
         self.device = (
             torch.device("cuda:1") if torch.cuda.is_available() else torch.device("cpu")
         )
-        print(self.device)
-        self.log_path = log_path
         self.manifold = manifold
         self.lr = lr
         self.content_module = content_module
         self.comment_module = comment_module
         self.fourier = fourier
         self.platform = platform
+        self.wandb = wandb
+        self.log_enable = False 
+        if self.log_enable:
+            self.wandb.init(
+                project='Hyphen-v2',
+                config={
+                    'type': 'Hybrid' 
+                }
+            )
+
+    def log(self, stats):
+        if self.log_enable:
+            self.wandb.log(stats)
+            
 
     def _fit_on_texts(self, train_x, val_x):
         """
@@ -65,31 +75,29 @@ class HyphenModel:
         texts = []
         texts.extend(train_x)
         texts.extend(val_x)
-        self.tokenizer = keras_preprocessing.text.Tokenizer(num_words=30000)
-        all_text = []
+        print(texts)
+        tokenizer = Tokenizer.from_pretrained('bert-base-cased')
 
         all_sentences = []
         for text in texts:
             for sentence in text:
                 all_sentences.append(sentence)
+        
+        def get_training_corpus():
+            dataset = all_sentences["train"]
+            for start_idx in range(0, len(dataset), 1000):
+                samples = dataset[start_idx : start_idx + 1000]
+                yield samples["whole_func_string"]
 
-        all_text.extend(all_sentences)
-        self.tokenizer.fit_on_texts(all_text)
+
+        training_corpus = get_training_corpus()
+
+        self.tokenizer = tokenizer.train_new_from_iterator(training_corpus, 30000)
         self.vocab_size = len(self.tokenizer.word_index) + 1
-        self._create_reverse_word_index()
-        pickle.dump(self.tokenizer, open("tokenizer.pkl", "wb"))
+        self.tokenizer.save_pretrained("Hyphen-tokenizer")
         print("saved tokenizer")
 
-    def _create_reverse_word_index(self):
-        """
-        create a dictionary with index as key and corresponding word as value pair.
-        e.g.
 
-        reverse_word_index = {1: 'the', 2: 'to', 3: 'a', 4: 'and', 5: 'of', 6: 'is', 7: 'in', 8: 'that', 9: 'i', ....}
-        """
-        self.reverse_word_index = {
-            value: key for key, value in self.tokenizer.word_index.items()
-        }
 
     def _build_model(self, n_classes=2, batch_size=12, embedding_dim=100):
         """
@@ -167,12 +175,10 @@ class HyphenModel:
         )
         for i, text in enumerate(texts):
             encoded_text = np.array(
-                pad_sequences(
+                torch.nn.utils.rnn.pad_sequence(
                     self.tokenizer.texts_to_sequences(text),
                     maxlen=self.max_sen_len,
-                    padding="post",
-                    truncating="post",
-                    value=0,
+                    padding_value=0,
                 )
             )[: self.max_sents]
             encoded_texts[i][: len(encoded_text)] = encoded_text
@@ -296,7 +302,6 @@ class HyphenModel:
         batch_size=9,
         epochs=5,
     ):
-        self.writer = SummaryWriter(self.log_path)
 
         # Fit the vocabulary set on the content and comments
         self._fit_on_texts(train_x, val_x)
@@ -361,8 +366,7 @@ class HyphenModel:
         # train model for given epoch
         self.run_epoch(epochs)
 
-        self.writer.close()
-
+        
     def run_epoch(self, epochs):
         """
         Function to train model for given epochs
@@ -404,14 +408,11 @@ class HyphenModel:
                     predictions.cpu().detach().numpy(),
                     list_metrics=["accuracy"],
                 )
-                self.writer.add_scalar(
-                    "Train/Loss", loss, epoch * num_iter_per_epoch + iter
-                )
-                self.writer.add_scalar(
-                    "Train/Accuracy",
-                    training_metrics["accuracy"],
-                    epoch * num_iter_per_epoch + iter,
-                )
+                wandb.log({
+                    "Train/Loss": loss, 
+                    "Epoch": epoch * num_iter_per_epoch + iter,
+                    "Train/Accuracy":training_metrics["accuracy"],
+                })
 
             self.model.eval()
             loss_ls = []
