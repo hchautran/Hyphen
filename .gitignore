@@ -136,3 +136,4 @@ logging/*
 glove.*.txt
 storage/*
 saved_models/*
+wandb/*
