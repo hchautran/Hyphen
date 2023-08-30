@@ -1,0 +1,130 @@
+{
+    "os": "Linux-5.4.0-156-generic-x86_64-with-glibc2.17",
+    "python": "3.8.16",
+    "heartbeatAt": "2023-08-29T14:48:13.197436",
+    "startedAt": "2023-08-29T14:48:12.200918",
+    "docker": null,
+    "cuda": null,
+    "args": [
+        "--manifold",
+        "PoincareBall",
+        "--lr",
+        "0.001",
+        "--dataset",
+        "pheme",
+        "--batch-size",
+        "32",
+        "--epochs",
+        "100",
+        "--max-sents",
+        "20",
+        "--max-coms",
+        "10",
+        "--max-com-len",
+        "10",
+        "--max-sent-len",
+        "20",
+        "--log-path",
+        "logging/run"
+    ],
+    "state": "running",
+    "program": "run.py",
+    "codePath": "run.py",
+    "git": {
+        "remote": "https://github.com/ProfEddie/Hyphen.git",
+        "commit": "7ce99ae3a6ed0a4a9558f7936805610060ac65b5"
+    },
+    "email": "tranhoaichau.00@gmail.com",
+    "root": "/home/chauhoai/Hyphen",
+    "host": "iecserver",
+    "username": "chauhoai",
+    "executable": "/home/chauhoai/miniconda3/bin/python",
+    "cpu_count": 6,
+    "cpu_count_logical": 12,
+    "cpu_freq": {
+        "current": 3283.0850833333334,
+        "min": 2200.0,
+        "max": 3600.0
+    },
+    "cpu_freq_per_core": [
+        {
+            "current": 3865.462,
+            "min": 2200.0,
+            "max": 3600.0
+        },
+        {
+            "current": 2835.583,
+            "min": 2200.0,
+            "max": 3600.0
+        },
+        {
+            "current": 3469.565,
+            "min": 2200.0,
+            "max": 3600.0
+        },
+        {
+            "current": 2788.06,
+            "min": 2200.0,
+            "max": 3600.0
+        },
+        {
+            "current": 4105.207,
+            "min": 2200.0,
+            "max": 3600.0
+        },
+        {
+            "current": 2764.148,
+            "min": 2200.0,
+            "max": 3600.0
+        },
+        {
+            "current": 3345.855,
+            "min": 2200.0,
+            "max": 3600.0
+        },
+        {
+            "current": 2928.315,
+            "min": 2200.0,
+            "max": 3600.0
+        },
+        {
+            "current": 3605.601,
+            "min": 2200.0,
+            "max": 3600.0
+        },
+        {
+            "current": 2701.101,
+            "min": 2200.0,
+            "max": 3600.0
+        },
+        {
+            "current": 4094.868,
+            "min": 2200.0,
+            "max": 3600.0
+        },
+        {
+            "current": 2893.256,
+            "min": 2200.0,
+            "max": 3600.0
+        }
+    ],
+    "disk": {
+        "total": 467.34664154052734,
+        "used": 425.87146759033203
+    },
+    "gpu": "NVIDIA GeForce RTX 3060",
+    "gpu_count": 2,
+    "gpu_devices": [
+        {
+            "name": "NVIDIA GeForce RTX 3060",
+            "memory_total": 12636717056
+        },
+        {
+            "name": "NVIDIA GeForce RTX 3060 Ti",
+            "memory_total": 8370061312
+        }
+    ],
+    "memory": {
+        "total": 62.790653228759766
+    }
+}
