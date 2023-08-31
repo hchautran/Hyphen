@@ -55,7 +55,7 @@ class HyphenModel:
         self.fourier = fourier
         self.platform = platform
      
-        self.log_enable = False 
+        self.log_enable = True 
         if self.log_enable:
             wandb.init(
                 project='Hyphen',
@@ -427,7 +427,6 @@ class HyphenModel:
                 _, predictions = torch.max(torch.softmax(predictions, dim=-1), 1)
                 _, label = torch.max(label, 1)
 
-                print(predictions)
                 predictions = predictions.detach().cpu().numpy()
                 label = label.detach().cpu().numpy()
 

@@ -23,8 +23,8 @@ class LFC_Block(Module):
             in_features, 
             out_features, 
             bias=True,
-            activation=None,
-            normalization="None",
+            activation=ACT2FN['gelu'],
+            normalization="",
             LFC_normalize=False,
             dropout=0.1
         ):

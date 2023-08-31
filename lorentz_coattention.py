@@ -4,76 +4,251 @@ import torch.nn.functional as F
 from hyptorch.lorentz.manifold import CustomLorentz
 from hyptorch.geoopt.manifolds.lorentz import math as lmath
 from hyptorch.lorentz.layers import LorentzLinear, LorentzAct
+from hyptorch.lorentz.layers.LAttn import CrossAttention 
+from hyptorch.lorentz.layers.LCLIP import  HypCLIPMLP
+from hyptorch.lorentz.blocks.layer_blocks import LorentzBatchNorm1d
 from hyptorch.geoopt import ManifoldParameter
 import torch.nn.functional as F
+from transformers import CLIPTextConfig 
+from typing import Optional, Tuple
+
+
 
 class CoAttention(nn.Module):
 
     """This is the class for Hyperbolic Fourier-coattention mechanism."""
+
+    def __init__(
+        self,
+        manifold=None,
+        embedding_dim=100,
+        combined_curvature=1,
+        fourier=False,
+    ):
+        super(CoAttention, self).__init__()
+
+        self.manifold = manifold
+        self.lorentz = CustomLorentz(k=combined_curvature)
+        self.embedding_dim = embedding_dim
+        self.k = 128
+        self.Wl = LorentzLinear(self.lorentz, self.embedding_dim+1, self.embedding_dim+1)
+        self.Wc = LorentzLinear(self.lorentz, self.embedding_dim + 1, self.k + 1)
+        self.Ws = LorentzLinear(self.lorentz, self.embedding_dim + 1, self.k + 1)
+        self.whs = nn.Parameter(torch.Tensor((1, self.k)))
+        self.whc = nn.Parameter(torch.Tensor((1, self.k)))
+        self.concat_m1 = nn.Parameter(torch.Tensor((1, 1)))
+        self.concat_m2 = nn.Parameter(torch.Tensor((1, 1)))
+        self.concat_b = nn.Parameter(torch.Tensor((1, self.embedding_dim)))
+        self.act = LorentzAct(manifold=self.lorentz,activation=nn.Tanh()) 
+
+        # register weights and bias as params
+        # self.register_parameter("Wl", self.Wl)
+        # self.register_parameter("Wc", self.Wc)
+        # self.register_parameter("Ws", self.Ws)
+        self.register_parameter("whs", self.whs)
+        self.register_parameter("whc", self.whc)
+
+        # concatenation operation for hyperbolic
+        self.register_parameter("concat_m1", self.concat_m1)
+        self.register_parameter("concat_m2", self.concat_m2)
+        self.register_parameter("concat_b", self.concat_b)
+
+        # initialize data of parameters
+        self.Wl.data = torch.randn((self.embedding_dim, self.embedding_dim))
+        self.Wc.data = torch.randn((self.k, self.embedding_dim))
+        self.Ws.data = torch.randn((self.k, self.embedding_dim))
+        self.whs.data = torch.randn((1, self.k))
+        self.whc.data = torch.randn((1, self.k))
+        self.concat_m1.data = torch.randn((1, 1))
+        self.concat_m2.data = torch.randn((1, 1))
+        self.concat_b.data = torch.randn((1, self.embedding_dim))
+        self.c = combined_curvature
+        self.fourier = fourier
+
+    def forward(self, sentence_rep, comment_rep):
+        """This function will return the shape [batch_size, embedding_dim]."""
+
+        mobius_matvec = self.manifold.mobius_matvec
+        proj = self.manifold.proj
+        logmap0 = self.manifold.logmap0
+        expmap0 = self.manifold.expmap0
+        mobius_add = self.manifold.mobius_add
+        curv = self.c
+        
+
+        if self.fourier:
+            # KFU
+            sentence_rep = logmap0(sentence_rep, c=curv)
+            sentence_rep = torch.fft.fft2(sentence_rep).float()
+
+            comment_rep = logmap0(comment_rep, c=curv)
+            comment_rep = torch.fft.fft2(comment_rep).float()
+
+            lorentz_comment_rep = self.lorentz.expmap0(F.pad(comment_rep, (1, 0), 'constant', 0))
+            lorentz_sentence_rep = self.lorentz.expmap0(F.pad(sentence_rep, (1, 0), 'constant', 0))
+
+        else:
+            lorentz_comment_rep = lmath.poincare_to_lorentz(comment_rep, k=curv)
+            lorentz_sentence_rep = lmath.poincare_to_lorentz(sentence_rep, k=curv)
+
+
+        L = self.Wl(lorentz_comment_rep)
+        assert not torch.isnan(L).any(), "L is nan"
+        L = self.act(lorentz_sentence_rep @ L.transpose(-1, -2))
+        # print(lorentz_comment_rep)
+
+        # Hs = torch.tanh(torch.matmul(self.Ws, sentence_rep_trans) + torch.matmul(torch.matmul(self.Wc, comment_rep_trans), L))
+        Hs_a = self.Ws(lorentz_sentence_rep) 
+        Hs_b = self.Wc(lorentz_comment_rep)
+
+        Hs_b = lmath.lorentz_to_poincare(Hs_b, k=curv)
+        Hs_a = lmath.lorentz_to_poincare(Hs_a, k=curv)
+
+        Hs_b = mobius_matvec(Hs_b.transpose(-1,-2), L, c=curv)
+        # Hs_b = expmap0(Hs_b_e, c=curv)
+        Hs_b = proj(Hs_b, c=curv)
+
+        Hs = proj(mobius_add(Hs_a, Hs_b, c=curv), c=curv)
+        Hs = proj(expmap0(torch.tanh(logmap0(Hs, c=curv)), c=curv), c=curv)  # [32, 80, 50]
+
+        # Hc = torch.tanh(torch.matmul(self.Wc, comment_rep_trans)+ torch.matmul(torch.matmul(self.Ws, sentence_rep_trans), L_trans))
+        Hc_a = self.Wc(lorentz_comment_rep)
+        Hc_b = self.Ws(lorentz_sentence_rep)
+
+        Hc_b = lmath.lorentz_to_poincare(Hc_b, k=curv)
+        Hc_a = lmath.lorentz_to_poincare(Hc_a, k=curv)
+
+        Hc_b = mobius_matvec(Hc_b.transpose(-1,-2), L.transpose(-1, -2), c=curv)
+        Hc_b = proj(Hc_b, c=curv)
+        Hc = proj(mobius_add(Hc_a.transpose(-1,-2), Hc_b.transpose(-1,-2), c=curv), c=curv)
+        Hc = proj(
+            expmap0(torch.tanh(logmap0(Hc, c=curv)), c=curv), c=curv
+        )  # [32, 80, 10]
+
+        As = mobius_matvec(self.whs, Hs, c=curv).transpose(
+            -1, -2
+        )  # [32, 1, 50]
+        As = proj(As, c=curv)
+        As = F.softmax(As, dim=-1)
+        # As = proj(As, c=curv)
+        assert not torch.isnan(As).any(), "As is nan"
+
+        Ac = mobius_matvec(self.whc, Hc.transpose(-1, -2), c=curv).transpose(-1, -2)
+        Ac = proj(Ac, c=curv)
+        Ac = F.softmax(Ac, dim=-1)
+        # Ac = proj(Ac, c=curv)  # [32, 1, 10]
+        assert not torch.isnan(Ac).any(), "Ac is nan"
+
+        # co_s = torch.matmul(As,sentence_rep) # (1, 100)
+        co_s = self.lorentz.centroid(lorentz_sentence_rep, As)
+        assert not torch.isnan(co_s).any(), "co_s is nan"
+
+        # co_c = torch.matmul(Ac, comment_rep) # (1, 100)
+        co_c = self.lorentz.centroid(lorentz_comment_rep, Ac)
+        assert not torch.isnan(co_c).any(), "co_c is nan"
+
+        co_sc = self.lorentz.concat(co_s, co_c)
+        co_sc = torch.squeeze(co_sc)
+
+        assert not torch.isnan(co_sc).any(), "co_sc is nan"
+        return co_sc, As, Ac  # [32, 200],
+
+
+class CrossAttentionEncoder(nn.Module):
+    def __init__(self, manifold:CustomLorentz, config: CLIPTextConfig):
+        super().__init__()
+        self.embed_dim = config.hidden_size
+        self.cross_attentkon= CrossAttention(manifold, config)
+        self.self_attention= CrossAttention(manifold, config)
+        self.batch_norm1 = LorentzBatchNorm1d(manifold, self.embed_dim+1)
+        self.batch_norm2 = LorentzBatchNorm1d(manifold, self.embed_dim+1)
+        self.mlp = HypCLIPMLP(manifold, config)
+        self.manifold = manifold
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        y: torch.Tensor,
+        output_attentions: Optional[bool] = False,
+    ) -> Tuple[torch.FloatTensor]:
+        """
+        Args:
+            hidden_states (`torch.FloatTensor`): input to the layer of shape `(batch, seq_len, embed_dim)`
+            attention_mask (`torch.FloatTensor`): attention mask of size
+                `(batch, 1, tgt_len, src_len)` where padding elements are indicated by very large negative values.
+                `(config.encoder_attention_heads,)`.
+            output_attentions (`bool`, *optional*):
+                Whether or not to return the attentions tensors of all attention layers. See `attentions` under
+                returned tensors for more detail.
+        """
+        residual = x 
+
+        hidden_states = self.manifold.projx(self.batch_norm1(x))
+        hidden_states, attn_weights = self.cross_attentkon(
+            x, y,
+            output_attentions=output_attentions,
+        )
+        hidden_states, attn_weights = self.self_attention(
+            hidden_states, hidden_states,
+            output_attentions=output_attentions,
+        )
+        self.manifold.assert_check_point_on_manifold(hidden_states)
+        
+        # residual connection
+        hidden_states =  self.manifold.projx(self.manifold.lorentz_addition(hidden_states, residual))
+
+
+        residual = hidden_states
+
+        hidden_states = self.manifold.projx(self.batch_norm2(hidden_states))
+        # self.manifold.assert_check_point_on_manifold(hidden_states)
+        hidden_states = self.mlp(hidden_states)
+        # self.manifold.assert_check_point_on_manifold(hidden_states)
+
+        # residual connection
+        hidden_states = self.manifold.projx(self.manifold.lorentz_addition(hidden_states, residual))
+        # self.manifold.assert_check_point_on_manifold(hidden_states)
+
+        outputs = (hidden_states,)
+
+        if output_attentions:
+            outputs += (attn_weights,)
+
+        return outputs
+
+ 
+class CoCrossAttention(nn.Module):
+
+    """This is the class for Hyperbolic Fourier-coattention mechanism."""
     
     def __init__(self, manifold:CustomLorentz , embedding_dim = 100, fourier = False):
-        super(CoAttention, self).__init__()
+        super(CoCrossAttention, self).__init__()
 
         self.k = 128
         self.manifold = manifold
         self.embedding_dim = embedding_dim
-        self.w_l = LorentzLinear(manifold, self.embedding_dim + 1, self.embedding_dim + 1, normalize=True)
-        self.w_c = LorentzLinear(manifold, self.embedding_dim + 1, self.k + 1, normalize=True)
-        self.w_s = LorentzLinear(manifold, self.embedding_dim + 1, self.k + 1, normalize=True)
-        self.w_hs = ManifoldParameter(manifold=manifold, data=manifold.random_normal(1, self.k+1))
-        self.w_hc = ManifoldParameter(manifold=manifold, data=manifold.random_normal(1, self.k+1))
-
-        self.c = self.manifold.k 
-        self.act = LorentzAct(manifold=manifold, activation=nn.Tanh())
-
-        #concatenation operation for hyperbolic 
+        config = CLIPTextConfig(
+            hidden_size=self.embedding_dim, 
+            num_attention_heads=1
+        )
+        self.cross_attn_s = CrossAttentionEncoder(manifold, config)
+        self.cross_attn_c = CrossAttentionEncoder(manifold, config)
+        self.w_hs = ManifoldParameter(manifold=manifold, data=manifold.random_normal(1, self.embedding_dim+1))
+        self.w_hc = ManifoldParameter(manifold=manifold, data=manifold.random_normal(1, self.embedding_dim+1))
         self.register_parameter("w_hs", self.w_hs)
         self.register_parameter("w_hc", self.w_hc)
-
-        #initialize data of parameters
-        self.fourier = fourier
 
 
     def forward(self, sentence_rep, comment_rep):
         """This function will return the shape [batch_size, embedding_dim]."""
 
-        if self.fourier:
-            # KFU
-            sentence_rep = self.manifold.logmap0(sentence_rep) 
-            sentence_rep = torch.fft.fft2(sentence_rep).float()
-
-            comment_rep = self.manifold.logmap0(comment_rep)
-            comment_rep = torch.fft.fft2(comment_rep).float()
-
-            sentence_rep = self.manifold.expmap0(sentence_rep)
-            comment_rep = self.manifold.expmap0(comment_rep)
-
-
-        C =2 + 2*self.manifold.matmul(comment_rep, self.w_l(sentence_rep).permute(0,2,1))
-
-        H_s = self.act(self.manifold.lorentz_addition(
-            self.w_s(sentence_rep), 
-            self.manifold.centroid(self.w_c(comment_rep), F.softmax(C.permute(0,2,1), dim=-1)))
-        ) # B x k x 196
-        self.manifold.assert_check_point_on_manifold(H_s)
-
-        H_c = self.act(self.manifold.lorentz_addition(
-            self.w_c(comment_rep), 
-            self.manifold.centroid(self.w_s(sentence_rep), F.softmax(C, dim=-1))
-        ))
-        self.manifold.assert_check_point_on_manifold(H_c)
-
-        a_c = F.softmax(2 + 2*self.manifold.matmul(self.w_hc, H_c.transpose(-2,-1)), dim=-1)
-        a_s = F.softmax(2 + 2*self.manifold.matmul(self.w_hs, H_s.transpose(-2,-1)), dim=-1)
-        # print(a_s)
-        # print(a_c)
- 
-        s = torch.squeeze(self.manifold.centroid(sentence_rep, a_s))
-        c = torch.squeeze(self.manifold.centroid(comment_rep, a_c))
-
-        self.manifold.assert_check_point_on_manifold(s)
-        self.manifold.assert_check_point_on_manifold(c)
-        co_sc = self.manifold.concat(s,c)
+        s = self.cross_attn_s(sentence_rep, comment_rep)[0]
+        c = self.cross_attn_c(comment_rep, sentence_rep)[0]
+        s = torch.squeeze(self.manifold.centroid(s))
+        c = torch.squeeze(self.manifold.centroid(c))
+        
+        co_sc = self.manifold.projx(self.manifold.concat(s,c))
         self.manifold.assert_check_point_on_manifold(co_sc)
-        return co_sc, a_s, a_c
-  
+        return co_sc
+
+   

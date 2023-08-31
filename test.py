@@ -3,9 +3,11 @@ from hyptorch.geoopt import ManifoldParameter, ManifoldTensor
 from hyptorch.geoopt.manifolds.stereographic.math import mobius_add, mobius_matvec
 from hyptorch.geoopt.manifolds.lorentz import math as lmath
 from hyptorch.lorentz.manifold import CustomLorentz
+from hyptorch.lorentz.layers.LAttn import CrossAttention 
 from utils.manifolds import PoincareBall
-from lorentz_coattention import CrossAttention
+from lorentz_coattention import CoAttention 
 from coattention import CoAttention 
+from transformers import CLIPTextConfig 
 
 
 def test():
@@ -50,14 +52,26 @@ if __name__ == "__main__":
     y = manifold.random_normal(32, 10, 101)
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
-    model = CrossAttention(manifold=manifold, embedding_dim=100 )
-    sc, a_s, a_c= model(x, y)
-    print(a_s.shape)
-    print(a_c.shape)
-    co_model = CoAttention(manifold=PoincareBall(), device=device)
-    sc, a_s, a_c= co_model(x_p, y_p)
-    print(a_s.shape)
-    print(a_c.shape)
+    # model = CrossAttention(manifold=manifold, embedding_dim=100 )
+    # sc, a_s, a_c= model(x, y)
+    # print(a_s.shape)
+    # print(a_c.shape)
+    # co_model = CoAttention(manifold=PoincareBall(), device=device)
+    # sc, a_s, a_c= co_model(x_p, y_p)
+    # print(a_s.shape)
+    # print(a_c.shape)
+
+    config = CLIPTextConfig(
+       hidden_size=100, 
+       num_attention_heads=2
+    )
+    
+    model = CrossAttention(manifold, config)
+    x, attn = model(y, x, output_attentions=True) 
+    y, attn = model(x, y, output_attentions=True) 
+
+    print(x.shape)
+    print(y.shape)
 
 
 

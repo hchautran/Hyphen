@@ -148,8 +148,7 @@ class CustomLorentz(Lorentz):
     #################################################
     def concat(self, x, y):
         z = torch.cat(
-            [x.narrow(-1, 1, y.shape[-1] - 1) , 
-            y.narrow(-1, 1, y.shape[-1] - 1)]
+            [x.narrow(-1, 1, y.shape[-1] - 1) , y.narrow(-1, 1, y.shape[-1] - 1)]
         ,dim=-1)
         return self.add_time(z)
 

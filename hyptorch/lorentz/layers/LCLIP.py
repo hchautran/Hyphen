@@ -10,7 +10,6 @@ from .LEmbed import LorentzEmbedding
 from hyptorch.lorentz.layers.LFC import LorentzLinear
 from transformers import CLIPVisionConfig, CLIPTextConfig
 from hyptorch.lorentz.layers import (
-    LorentzBatchNorm1d,
     LorentzBatchNorm2d,
     LorentzConv2d,
 )
@@ -131,10 +130,10 @@ class HypCLIPAttention(nn.Module):
         self.dropout = config.attention_dropout
         self.bias = nn.Parameter(torch.zeros(()))
 
-        self.k_proj = LorentzLinear(manifold, self.embed_dim + 1, self.embed_dim + 1)
-        self.v_proj = LorentzLinear(manifold, self.embed_dim + 1, self.embed_dim + 1)
-        self.q_proj = LorentzLinear(manifold, self.embed_dim + 1, self.embed_dim + 1)
-        self.out_proj = LorentzLinear(manifold, self.embed_dim + 1, self.embed_dim + 1)
+        self.k_proj = LorentzLinear(manifold, self.embed_dim + 1, self.embed_dim + 1, normalize=True)
+        self.v_proj = LorentzLinear(manifold, self.embed_dim + 1, self.embed_dim + 1, normalize=True)
+        self.q_proj = LorentzLinear(manifold, self.embed_dim + 1, self.embed_dim + 1, normalize=True)
+        self.out_proj = LorentzLinear(manifold, self.embed_dim + 1, self.embed_dim + 1, normalize=True)
 
     def _shape(self, tensor: torch.Tensor, seq_len: int, bsz: int):
         space = tensor.narrow(-1, 1, tensor.shape[-1] - 1)
@@ -240,8 +239,6 @@ class HypCLIPEncoderLayer(nn.Module):
         super().__init__()
         self.embed_dim = config.hidden_size
         self.self_attn = HypCLIPAttention(manifold, config)
-        self.batch_norm1 = LorentzBatchNorm1d(manifold, self.embed_dim+1)
-        self.batch_norm2 = LorentzBatchNorm1d(manifold, self.embed_dim+1)
         self.mlp = HypCLIPMLP(manifold, config)
         self.manifold = manifold
 
@@ -263,7 +260,6 @@ class HypCLIPEncoderLayer(nn.Module):
         """
         residual = hidden_states
 
-        hidden_states = self.batch_norm1(hidden_states)
         self.manifold.assert_check_point_on_manifold(hidden_states)
         hidden_states, attn_weights = self.self_attn(
             hidden_states=hidden_states,
@@ -281,7 +277,6 @@ class HypCLIPEncoderLayer(nn.Module):
 
         residual = hidden_states
 
-        hidden_states = self.batch_norm2(hidden_states)
         self.manifold.assert_check_point_on_manifold(hidden_states)
         hidden_states = self.mlp(hidden_states)
         self.manifold.assert_check_point_on_manifold(hidden_states)
