@@ -1,7 +1,9 @@
 import torch
 from hyptorch.geoopt import Lorentz
 from hyptorch.geoopt.manifolds.lorentz import math
+from hyptorch.geoopt.manifolds.stereographic import math as pmath
 from typing import Tuple, Optional
+from transformers import CLIPModel
 
 
 class CustomLorentz(Lorentz):
@@ -26,10 +28,11 @@ class CustomLorentz(Lorentz):
         return torch.sqrt(torch.norm(space, dim=-1, keepdim=True) ** 2 + self.k)
 
 
-    def bmm(self, x: torch.Tensor, y: torch.Tensor):
+    def matmul(self, x: torch.Tensor, y: torch.Tensor):
         x = x.clone()
         x.narrow(-1, 0, 1).mul_(-1)
-        return x @ y
+        return torch.matmul(x, y) 
+        
 
     def centroid(self, x, w=None, eps=1e-8):
         """Centroid implementation. Adapted the code from Chen et al. (2022)"""
@@ -124,3 +127,30 @@ class CustomLorentz(Lorentz):
         else:
             reason = None
         return ok, reason
+    #################################################
+    #      Addition 
+    #################################################
+
+        
+    def lorentz_addition(self, x, y):
+        x_p = math.lorentz_to_poincare(x, k=self.k)
+        y_p = math.lorentz_to_poincare(y, k=self.k)
+        return math.poincare_to_lorentz(pmath.mobius_add(x_p, y_p, k=self.k),k=self.k)
+    
+    def direct_addition(self, x, y):
+        x = x.narrow(-1, 1, y.shape[-1] - 1) + y.narrow(
+            -1, 1, y.shape[-1] - 1
+        )
+        return self.add_time(x)
+
+    #################################################
+    #      Concat 
+    #################################################
+    def concat(self, x, y):
+        z = torch.cat(
+            [x.narrow(-1, 1, y.shape[-1] - 1) , 
+            y.narrow(-1, 1, y.shape[-1] - 1)]
+        ,dim=-1)
+        return self.add_time(z)
+
+        

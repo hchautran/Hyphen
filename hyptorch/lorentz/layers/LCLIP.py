@@ -287,10 +287,7 @@ class HypCLIPEncoderLayer(nn.Module):
         self.manifold.assert_check_point_on_manifold(hidden_states)
 
         # residual connection
-        hidden_states = hidden_states.narrow(-1, 1, residual.shape[-1] - 1) + residual.narrow(
-            -1, 1, residual.shape[-1] - 1
-        )
-        hidden_states = self.manifold.add_time(hidden_states)
+        self.manifold.lorentz_addition(hidden_states, residual)
 
         outputs = (hidden_states,)
 

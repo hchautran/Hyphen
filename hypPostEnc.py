@@ -37,7 +37,7 @@ class HypPostEnc(nn.Module):
             self.word_att_net = WordAttNet(embedding_matrix, word_hidden_size)
             self.sent_att_net = SentAttNet(sent_hidden_size, word_hidden_size, num_classes)
 
-        elif isinstance(self.manifold, PoincareBall):
+        else:
             self.word_att_net = H_WordAttNet(embedding_matrix, word_hidden_size)
             self.sent_att_net = H_SentAttNet(sent_hidden_size, word_hidden_size, num_classes, self.content_curvature)
         
@@ -51,7 +51,6 @@ class HypPostEnc(nn.Module):
             batch_size = self.batch_size
         self.word_hidden_state = torch.zeros(2, batch_size, self.word_hidden_size)
         self.sent_hidden_state = torch.zeros(2, batch_size, self.sent_hidden_size)
-        print('current device:', self.device)
         
         self.word_hidden_state = self.word_hidden_state.to(self.device)
         self.sent_hidden_state = self.sent_hidden_state.to(self.device)

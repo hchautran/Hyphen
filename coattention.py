@@ -16,7 +16,7 @@ class CoAttention(nn.Module):
         manifold=None,
         content_curvature=None,
         comment_curvature=None,
-        combined_curvature=None,
+        combined_curvature=1,
         fourier=False,
     ):
         super(CoAttention, self).__init__()

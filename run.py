@@ -4,7 +4,7 @@ import pickle
 import argparse
 import pickle
 parser = argparse.ArgumentParser()
-from main import HyphenModel
+from lorentz_main import HyphenModel
 from dgl import heterograph
 
 parser.add_argument('--manifold', choices=['PoincareBall', 'Euclidean'], default = 'PoincareBall', help='Choose the underlying manifold for Hyphen')

@@ -51,7 +51,6 @@ class HypCLIPEncoder(nn.Module):
             if output_hidden_states:
                 encoder_states = encoder_states + (hidden_states,)
             if self.gradient_checkpointing and self.training:
-
                 def create_custom_forward(module):
                     def custom_forward(*inputs):
                         return module(*inputs, output_attentions)

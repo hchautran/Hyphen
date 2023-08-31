@@ -55,7 +55,7 @@ class HyphenModel:
         self.fourier = fourier
         self.platform = platform
      
-        self.log_enable = True 
+        self.log_enable = False 
         if self.log_enable:
             wandb.init(
                 project='Hyphen',
@@ -78,36 +78,8 @@ class HyphenModel:
         texts = []
         texts.extend(train_x)
         texts.extend(val_x)
-        special_tokens = ['<s>', '</s>', '<unk>', '<pad>', '<sep>']
         self.tokenizer = AutoTokenizer.from_pretrained('bert-base-uncased')
-        # self.tokenizer = Tokenizer(models.WordPiece())
-        # self.tokenizer.pre_tokenizer = pre_tokenizers.ByteLevel()
-        # self.tokenizer.normalizer = normalizers.NFKC()
-        # self.tokenizer.decoders = decoders.ByteLevel()
-        # self.tokenizer.enable_padding(pad_id=0, pad_token="<pad>")
-
-#         trainer = trainers.WordPieceTrainer(
-#             vocab_size=30000,
-          
-#             special_tokens=special_tokens
-#         )
-        
-        all_sentences = []
-        for text in texts:
-            for sentence in text:
-                all_sentences.append(sentence)
-        
-        def get_training_corpus():
-            for start_idx in range(0, len(all_sentences), 1000):
-                samples = all_sentences[start_idx : start_idx + 1000]
-                yield samples
-
-
-        training_corpus = get_training_corpus()
-
-        # self.tokenizer.train_from_iterator(training_corpus, trainer=trainer)
         self.vocab_size = self.tokenizer.vocab_size
-        # self.tokenizer.save("tokenizer.json")
         print("saved tokenizer")
 
 
@@ -197,8 +169,6 @@ class HyphenModel:
                     value=0
                 )
             )[:self.max_sents]
-            # encoded_text = ids[:self.max_sents]
-
             
             encoded_texts[i][:len(encoded_text)] = encoded_text
 
