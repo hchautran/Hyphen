@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from hyptorch.lorentz.manifold import CustomLorentz
+from hyptorch.geoopt.manifolds.stereographic import PoincareBallExact
 from hyptorch.geoopt.manifolds.lorentz import math as lmath
 from hyptorch.lorentz.layers import LorentzLinear, LorentzAct
 from hyptorch.lorentz.layers.LAttn import CrossAttention 
@@ -29,6 +30,7 @@ class CoAttention(nn.Module):
 
         self.manifold = manifold
         self.lorentz = CustomLorentz(k=combined_curvature)
+        self.poincare = PoincareBallExact(c=combined_curvature)
         self.embedding_dim = embedding_dim
         self.k = 128
         self.Wl = LorentzLinear(self.lorentz, self.embedding_dim+1, self.embedding_dim+1)
@@ -63,38 +65,47 @@ class CoAttention(nn.Module):
         self.concat_m2.data = torch.randn((1, 1))
         self.concat_b.data = torch.randn((1, self.embedding_dim))
         self.c = combined_curvature
+        self.clip_r = 2.0 
         self.fourier = fourier
+
+    def euclid_to_lorentz(self, x):
+        if self.clip_r is not None :
+            x_norm = torch.norm(x, dim=-1, keepdim=True) + 1e-5
+            fac = torch.minimum(torch.ones_like(x_norm), self.clip_r / x_norm)
+            x = x * fac
+        
+        x = F.pad(x, (1,0), "constant", 0)
+        out = self.lorentz.expmap0(x)
+        return out 
+
+ 
 
     def forward(self, sentence_rep, comment_rep):
         """This function will return the shape [batch_size, embedding_dim]."""
 
-        mobius_matvec = self.manifold.mobius_matvec
-        proj = self.manifold.proj
-        logmap0 = self.manifold.logmap0
-        expmap0 = self.manifold.expmap0
-        mobius_add = self.manifold.mobius_add
         curv = self.c
-        
-
         if self.fourier:
             # KFU
-            sentence_rep = logmap0(sentence_rep, c=curv)
+            sentence_rep = self.poincare.logmap0(sentence_rep)
+            assert not torch.isnan(sentence_rep).any(), "sentence is nan before fft2"
             sentence_rep = torch.fft.fft2(sentence_rep).float()
+            assert not torch.isnan(sentence_rep).any(), "sentence is nan after fft2"
 
-            comment_rep = logmap0(comment_rep, c=curv)
+            comment_rep = self.poincare.logmap0(comment_rep)
+            assert not torch.isnan(comment_rep).any(), "comment is nan before fft2"
             comment_rep = torch.fft.fft2(comment_rep).float()
+            assert not torch.isnan(comment_rep).any(), "comment is nan after fft2"
 
-            lorentz_comment_rep = self.lorentz.expmap0(F.pad(comment_rep, (1, 0), 'constant', 0))
-            lorentz_sentence_rep = self.lorentz.expmap0(F.pad(sentence_rep, (1, 0), 'constant', 0))
-
+            lorentz_sentence_rep = self.euclid_to_lorentz(sentence_rep)
+            lorentz_comment_rep = self.euclid_to_lorentz(comment_rep) 
         else:
-            lorentz_comment_rep = lmath.poincare_to_lorentz(comment_rep, k=curv)
             lorentz_sentence_rep = lmath.poincare_to_lorentz(sentence_rep, k=curv)
+            lorentz_comment_rep = lmath.poincare_to_lorentz(comment_rep, k=curv)
 
 
         L = self.Wl(lorentz_comment_rep)
-        assert not torch.isnan(L).any(), "L is nan"
         L = self.act(lorentz_sentence_rep @ L.transpose(-1, -2))
+        assert not torch.isnan(L).any(), "L is nan"
         # print(lorentz_comment_rep)
 
         # Hs = torch.tanh(torch.matmul(self.Ws, sentence_rep_trans) + torch.matmul(torch.matmul(self.Wc, comment_rep_trans), L))
@@ -103,13 +114,12 @@ class CoAttention(nn.Module):
 
         Hs_b = lmath.lorentz_to_poincare(Hs_b, k=curv)
         Hs_a = lmath.lorentz_to_poincare(Hs_a, k=curv)
+        # print(Hs_b.shape)
 
-        Hs_b = mobius_matvec(Hs_b.transpose(-1,-2), L, c=curv)
-        # Hs_b = expmap0(Hs_b_e, c=curv)
-        Hs_b = proj(Hs_b, c=curv)
+        Hs_b = self.poincare.mobius_matvec(Hs_b.transpose(-1,-2), L)
 
-        Hs = proj(mobius_add(Hs_a, Hs_b, c=curv), c=curv)
-        Hs = proj(expmap0(torch.tanh(logmap0(Hs, c=curv)), c=curv), c=curv)  # [32, 80, 50]
+        Hs = self.poincare.mobius_add(Hs_a, Hs_b)
+        Hs = self.poincare.expmap0(torch.tanh(self.poincare.logmap0(Hs)))  # [32, 80, 50]
 
         # Hc = torch.tanh(torch.matmul(self.Wc, comment_rep_trans)+ torch.matmul(torch.matmul(self.Ws, sentence_rep_trans), L_trans))
         Hc_a = self.Wc(lorentz_comment_rep)
@@ -118,25 +128,16 @@ class CoAttention(nn.Module):
         Hc_b = lmath.lorentz_to_poincare(Hc_b, k=curv)
         Hc_a = lmath.lorentz_to_poincare(Hc_a, k=curv)
 
-        Hc_b = mobius_matvec(Hc_b.transpose(-1,-2), L.transpose(-1, -2), c=curv)
-        Hc_b = proj(Hc_b, c=curv)
-        Hc = proj(mobius_add(Hc_a.transpose(-1,-2), Hc_b.transpose(-1,-2), c=curv), c=curv)
-        Hc = proj(
-            expmap0(torch.tanh(logmap0(Hc, c=curv)), c=curv), c=curv
-        )  # [32, 80, 10]
+        Hc_b = self.poincare.mobius_matvec(Hc_b.transpose(-1,-2), L.transpose(-1, -2))
+        Hc = self.poincare.mobius_add(Hc_a.transpose(-1,-2), Hc_b.transpose(-1,-2))
+        Hc = self.poincare.expmap0(torch.tanh(self.poincare.logmap0(Hc)))  # [32, 80, 10]
 
-        As = mobius_matvec(self.whs, Hs, c=curv).transpose(
-            -1, -2
-        )  # [32, 1, 50]
-        As = proj(As, c=curv)
-        As = F.softmax(As, dim=-1)
-        # As = proj(As, c=curv)
+        As = self.poincare.mobius_matvec(self.whs, Hs) 
+        As = F.softmax(As.transpose(-1, -2), dim=-1)
         assert not torch.isnan(As).any(), "As is nan"
 
-        Ac = mobius_matvec(self.whc, Hc.transpose(-1, -2), c=curv).transpose(-1, -2)
-        Ac = proj(Ac, c=curv)
-        Ac = F.softmax(Ac, dim=-1)
-        # Ac = proj(Ac, c=curv)  # [32, 1, 10]
+        Ac = self.poincare.mobius_matvec(self.whc, Hc.transpose(-1, -2))
+        Ac = F.softmax(Ac.transpose(-1, -2), dim=-1)
         assert not torch.isnan(Ac).any(), "Ac is nan"
 
         # co_s = torch.matmul(As,sentence_rep) # (1, 100)

@@ -54,7 +54,7 @@ class HyphenModel:
         self.fourier = fourier
         self.platform = platform
      
-        self.log_enable = False 
+        self.log_enable = True 
         if self.log_enable:
             wandb.init(
                 project='Hyphen',
@@ -394,6 +394,7 @@ class HyphenModel:
                 )  # As and Ac are the attention weights we are returning
                 loss = self.criterion(predictions, label)
                 loss.backward()
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
                 self.optimizer.step()
 
                 training_metrics = get_evaluation(
