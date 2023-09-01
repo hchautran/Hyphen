@@ -35,7 +35,7 @@ class Hyphen(nn.Module):
         self.max_word_length  = max_word_length 
         self.graph_hidden = graph_hidden
         # self.poincare = getattr(manifolds, manifold)()
-        self.manifold = getattr(manifolds, manifold)()
+        self.manifold = getattr(manifolds, 'PoincareBall')()
         self.lorentz = CustomLorentz(k=1)
         self.comment_module = comment_module
         self.content_module = content_module 
