@@ -41,7 +41,7 @@ class CoAttention(nn.Module):
         self.concat_m1 = nn.Parameter(torch.Tensor((1, 1)))
         self.concat_m2 = nn.Parameter(torch.Tensor((1, 1)))
         self.concat_b = nn.Parameter(torch.Tensor((1, self.embedding_dim)))
-        self.act = LorentzAct(manifold=self.lorentz,activation=nn.Tanh()) 
+        self.act = LorentzAct(manifold=self.lorentz,activation=nn.GELU()) 
 
         # register weights and bias as params
         # self.register_parameter("Wl", self.Wl)
@@ -51,19 +51,10 @@ class CoAttention(nn.Module):
         self.register_parameter("whc", self.whc)
 
         # concatenation operation for hyperbolic
-        self.register_parameter("concat_m1", self.concat_m1)
-        self.register_parameter("concat_m2", self.concat_m2)
-        self.register_parameter("concat_b", self.concat_b)
 
         # initialize data of parameters
-        self.Wl.data = torch.randn((self.embedding_dim, self.embedding_dim))
-        self.Wc.data = torch.randn((self.k, self.embedding_dim))
-        self.Ws.data = torch.randn((self.k, self.embedding_dim))
         self.whs.data = torch.randn((1, self.k))
         self.whc.data = torch.randn((1, self.k))
-        self.concat_m1.data = torch.randn((1, 1))
-        self.concat_m2.data = torch.randn((1, 1))
-        self.concat_b.data = torch.randn((1, self.embedding_dim))
         self.c = combined_curvature
         self.clip_r = 2.0 
         self.fourier = fourier
