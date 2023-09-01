@@ -58,7 +58,7 @@ class HyphenModel:
         if self.log_enable:
             wandb.init(
                 project='Hyphen',
-                name=f'{platform}_{manifold},
+                name=f'{platform}_{manifold}',
                 config={
                     'dataset': platform,
                     'type': manifold
@@ -141,9 +141,6 @@ class HyphenModel:
 
         model = model.to(self.device)
 
-        # if self.manifold == "Euclidean":  # choose the manifold
-        # self.optimizer = optim.AdamW(model.parameters(), lr=self.lr)
-        # else:
         self.optimizer = RiemannianAdam(model.parameters(), lr=self.lr)
 
         self.criterion = nn.CrossEntropyLoss()

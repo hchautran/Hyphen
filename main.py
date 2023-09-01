@@ -59,7 +59,7 @@ class HyphenModel:
         if self.log_enable:
             wandb.init(
                 project='Hyphen',
-                name=platform,
+                name=f'{platform}_{manifold}',
                 config={
                     'dataset': platform,
                     'type': manifold
@@ -436,6 +436,7 @@ class HyphenModel:
             if f1 > best_f1:
                 print(f"Best F1: {f1}")
                 print("Saving best model!")
+                self.log({'best F1': f1})
                 dst_dir = f"saved_models/{self.platform}/"
                 os.makedirs(dst_dir, exist_ok=True)
                 torch.save(
