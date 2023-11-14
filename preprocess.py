@@ -26,8 +26,9 @@ def get_data(DATA):
                 labels.append(data[idx]['label'])
                 comments.append(data[idx]['graph'])#this is the comment graph -- merged amr graph corresponding to each 
                 subgraphs.append(data[idx]['subgraphs'])
-            except:#to remove the null samples - samples with no comments
-                print("error", idx)
+            except:
+                print('error', idx)
+                # to remove the null samples - samples with no comments
 
         labels = np.asarray(labels)
         le = preprocessing.LabelEncoder()

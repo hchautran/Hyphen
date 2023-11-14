@@ -54,7 +54,7 @@ class HyphenModel:
         self.fourier = fourier
         self.platform = platform
      
-        self.log_enable = True 
+        self.log_enable = False 
         if self.log_enable:
             wandb.init(
                 project='Hyphen',
