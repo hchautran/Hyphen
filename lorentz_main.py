@@ -16,6 +16,7 @@ from utils.dataset import FakeNewsDataset
 from utils.utils import get_evaluation
 import wandb
 from transformers import AutoTokenizer
+from const import DATA_PATH
 
 
 class HyphenModel:
@@ -90,7 +91,7 @@ class HyphenModel:
         """
         embeddings_index = {}
 
-        self.glove_dir = "glove.twitter.27B.100d.txt"
+        self.glove_dir = f"{DATA_PATH}/glove.twitter.27B.100d.txt"
 
         f = open(self.glove_dir, encoding="utf-8")
 
