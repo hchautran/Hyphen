@@ -45,12 +45,12 @@ class Hyphen(nn.Module):
         
         if self.comment_module and self.content_module: 
             self.fc = nn.Sequential( 
-                # LFC_Block(self.manifold, 2*latent_dim + 1, 2*latent_dim + 1, normalization="batch_norm"),
+                LFC_Block(self.lorentz, 2*latent_dim + 1, 2*latent_dim + 1),
                 LorentzMLR(self.lorentz, 2*latent_dim + 1, num_classes),
             )
         elif self.comment_module: 
             self.fc = nn.Sequential( 
-                # LFC_Block(self.manifold, latent_dim + 1, latent_dim + 1, normalization="batch_norm"),
+                LFC_Block(self.lorentz, latent_dim + 1, latent_dim + 1),
                 LorentzMLR(self.lorentz, latent_dim + 1, num_classes),
             )
         else: 
