@@ -123,7 +123,6 @@ class H_WordAttNet(nn.Module):
     def forward(self, input, hidden_state):
 
         output = self.lookup(input)
-
         self.gru.flatten_parameters()  # Todo{flatten()}
         f_output, h_output = self.gru(output.float(), hidden_state)
     

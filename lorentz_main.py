@@ -110,8 +110,8 @@ class HyphenModel:
         """
         embeddings_index = {}
 
-        self.glove_dir = f"{DATA_PATH}/glove.twitter.27B.100d.txt"
-        # self.glove_dir = f"{DATA_PATH}/poincare_glove_100D_cosh-dist-sq_init_trick.txt"
+        # self.glove_dir = f"{DATA_PATH}/glove.twitter.27B.100d.txt"
+        self.glove_dir = f"{DATA_PATH}/poincare_glove_100D_cosh-dist-sq_init_trick.txt"
 
         f = open(self.glove_dir, encoding="utf-8")
 
@@ -177,20 +177,23 @@ class HyphenModel:
         encoded_texts = np.zeros((len(texts), self.max_sents, self.max_sen_len), dtype='int32')
         for i, text in enumerate(texts):
             # ids = [item.ids for item in self.tokenizer.encode_batch(text)]
-            tokens = self.tokenizer.encode_batch(text)
-            # ids = np.array(tokens[0].ids)
-
-            encoded_text = np.concatenate([np.array(
-                torch.nn.functional.pad(
-                    torch.tensor(tokens[i].ids),
-                    pad=(0, self.max_sen_len - torch.tensor(tokens[i].ids).shape[0]), 
+            sents = self.tokenizer.encode_batch(text)
+            encoded_sents = []
+            for sent in sents:
+                encoded_sent = np.array(torch.nn.functional.pad(
+                    torch.tensor(sent.ids)[np.newaxis, ...],
+                    pad=(0, self.max_sen_len - torch.tensor(sent.ids).shape[0]), 
                     mode='constant', 
                     value=0
-                )
-            )[:self.max_sents][np.newaxis,...] for i in range(len(tokens))])
-            print(encoded_text.shape)
+                ))
+                print(encoded_sent)
+                encoded_sents.append(encoded_sent)
+
+            encoded_sents = np.concatenate(encoded_sents, axis=0)
+            # print(encoded_sents)
             
-            encoded_texts[i][:len(encoded_text)] = encoded_text
+            encoded_texts[i][:len(encoded_sents)] = encoded_sents
+            
 
         return encoded_texts
 

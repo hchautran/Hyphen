@@ -91,8 +91,8 @@ class HyphenModel:
         """
         embeddings_index = {}
 
-        self.glove_dir = f"{DATA_PATH}/glove.twitter.27B.100d.txt"
-        # self.glove_dir = f"{DATA_PATH}/poincare_glove_100D_cosh-dist-sq_init_trick.txt"
+        # self.glove_dir = f"{DATA_PATH}/glove.twitter.27B.100d.txt"
+        self.glove_dir = f"{DATA_PATH}/poincare_glove_100D_cosh-dist-sq_init_trick.txt"
 
         f = open(self.glove_dir, encoding="utf-8")
 

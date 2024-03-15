@@ -4,7 +4,7 @@ import torch.nn as nn
 
 from lorentz_coattention import CoAttention 
 from hypComEnc import HypComEnc
-from hypPostEnc import HypPostEnc
+from LorentzHypPostEnc import HypPostEnc
 from utils.layers.hyp_layers import *
 from utils import manifolds
 from utils.manifolds import Euclidean
