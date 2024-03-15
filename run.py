@@ -29,9 +29,16 @@ props = pickle.load(file)
 
 id_train, id_test = props['train']['id'], props['val']['id']
 x_train, x_val = props['train']['x'], props['val']['x']
+# print(x_train)
+# print('-'*100)
 y_train, y_val = props['train']['y'], props['val']['y']
+# print(y_train)
+# print('-'*100)
 c_train, c_val = props['train']['c'], props['val']['c']
+# print(c_train)
+# print('-'*100)
 sub_train, sub_val = props['train']['subgraphs'], props['val']['subgraphs']
+# print(sub_train)
 
 
 if args.manifold != 'Lorentz':
@@ -61,4 +68,4 @@ else:
         fourier = args.no_fourier
     )
 
-hyphen.train(x_train, y_train, c_train, c_val, x_val, y_val, sub_train, sub_val, batch_size= args.batch_size, epochs=args.epochs)
+hyphen.train(x_train, y_train, c_train, c_val, x_val, y_val, sub_train, sub_val, batch_size=args.batch_size, epochs=args.epochs)

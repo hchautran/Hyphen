@@ -17,6 +17,7 @@ from utils.utils import get_evaluation
 import wandb
 from transformers import AutoTokenizer
 from const import DATA_PATH
+from tokenizers import Tokenizer, decoders, models, normalizers, pre_tokenizers, trainers
 
 
 class HyphenModel:
@@ -79,10 +80,28 @@ class HyphenModel:
         texts = []
         texts.extend(train_x)
         texts.extend(val_x)
-        self.tokenizer = AutoTokenizer.from_pretrained('bert-base-uncased')
-        self.vocab_size = self.tokenizer.vocab_size
+        tokenizer = Tokenizer(models.WordLevel())
+        tokenizer.normalizer = normalizers.NFKC()
+        tokenizer.pre_tokenizer = pre_tokenizers.Whitespace()
+        # tokenizer.decoder = decoders.ByteLevel()
+        trainer = trainers.WordLevelTrainer(
+            vocab_size=500000,
+            initial_alphabet=pre_tokenizers.ByteLevel.alphabet(),
+            special_tokens=["<PAD>", "<BOS>", "<EOS>"],
+        )
+        all_sentences = []
+        for text in texts:
+            for sentence in text:
+                all_sentences.append(sentence)
+        print(len(all_sentences))
+
+        tokenizer.train_from_iterator(all_sentences, trainer=trainer)
+
+        self.tokenizer = tokenizer 
+
         print("saved tokenizer")
 
+   
 
 
     def _build_model(self, n_classes=2, batch_size=12, embedding_dim=100):
@@ -92,6 +111,7 @@ class HyphenModel:
         embeddings_index = {}
 
         self.glove_dir = f"{DATA_PATH}/glove.twitter.27B.100d.txt"
+        # self.glove_dir = f"{DATA_PATH}/poincare_glove_100D_cosh-dist-sq_init_trick.txt"
 
         f = open(self.glove_dir, encoding="utf-8")
 
@@ -105,7 +125,7 @@ class HyphenModel:
         f.close()
 
         # get word index
-        word_index = self.tokenizer.vocab
+        word_index = self.tokenizer.get_vocab()
         embedding_matrix = np.random.random((len(word_index) + 1, embedding_dim))
 
         # create embedding matrix.
@@ -157,15 +177,18 @@ class HyphenModel:
         encoded_texts = np.zeros((len(texts), self.max_sents, self.max_sen_len), dtype='int32')
         for i, text in enumerate(texts):
             # ids = [item.ids for item in self.tokenizer.encode_batch(text)]
-            ids = self.tokenizer(text, return_tensors='np', padding=True, truncation=True, max_length=self.max_sen_len)['input_ids']
-            encoded_text = np.array(
+            tokens = self.tokenizer.encode_batch(text)
+            # ids = np.array(tokens[0].ids)
+
+            encoded_text = np.concatenate([np.array(
                 torch.nn.functional.pad(
-                    torch.from_numpy(ids),
-                    pad=(0, self.max_sen_len - torch.tensor(ids).shape[1]), 
+                    torch.tensor(tokens[i].ids),
+                    pad=(0, self.max_sen_len - torch.tensor(tokens[i].ids).shape[0]), 
                     mode='constant', 
                     value=0
                 )
-            )[:self.max_sents]
+            )[:self.max_sents][np.newaxis,...] for i in range(len(tokens))])
+            print(encoded_text.shape)
             
             encoded_texts[i][:len(encoded_text)] = encoded_text
 
