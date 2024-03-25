@@ -15,6 +15,7 @@ class FakeNewsDataset(Dataset):
         self.subgraphs= subgraphs
 
         self.max_length_sentences = max_length_sentences
+        self 
         self.max_length_word = max_length_word
 
         self.num_classes = len(np.unique(self.labels))

@@ -9,21 +9,30 @@ import warnings
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import warnings#ignoring the undefinedmetric warnings -- incase of precision having zero division
+import warnings
 warnings.filterwarnings("ignore", category=sklearn.exceptions.UndefinedMetricWarning) 
 
-from utils.manifolds import Euclidean, PoincareBall
-from utils.nets import MobiusGRU
-from utils.nets import MobiusLinear
-from utils.nets import MobiusDist2Hyperplane
-from utils.utils import matrix_mul, element_wise_mul
+from hyptorch.geoopt.manifolds import PoincareBall
+from ..utils.nets import MobiusGRU
+from ..utils.nets import MobiusLinear
+from ..utils.nets import MobiusDist2Hyperplane
 
 eps = 1e-7
 
-class HypPostEnc(nn.Module):
-    def __init__(self, word_hidden_size, sent_hidden_size, batch_size, num_classes, embedding_matrix, max_sent_length, max_word_length, device, manifold,
-    content_curvature):
-        super(HypPostEnc, self).__init__()
+class PostEnc(nn.Module):
+    def __init__(
+        self, 
+        word_hidden_size, 
+        sent_hidden_size, 
+        batch_size, 
+        num_classes, 
+        embedding_matrix, 
+        max_sent_length, 
+        max_word_length, 
+        device,
+        manifold:PoincareBall,
+    ):
+        super(PostEnc, self).__init__()
         self.batch_size = batch_size
         self.device = device
         self.word_hidden_size = word_hidden_size
@@ -31,17 +40,8 @@ class HypPostEnc(nn.Module):
         self.max_sent_length = max_sent_length
         self.max_word_length = max_word_length
         self.manifold = manifold
-        self.content_curvature = content_curvature
-
-        if isinstance(self.manifold, Euclidean):
-            self.word_att_net = WordAttNet(embedding_matrix, word_hidden_size)
-            self.sent_att_net = SentAttNet(sent_hidden_size, word_hidden_size, num_classes)
-
-        else:
-            self.word_att_net = H_WordAttNet(embedding_matrix, word_hidden_size)
-            self.sent_att_net = H_SentAttNet(sent_hidden_size, word_hidden_size, num_classes, self.content_curvature)
-        
-        
+        self.word_att_net = H_WordAttNet(embedding_matrix, word_hidden_size)
+        self.sent_att_net = H_SentAttNet(sent_hidden_size, word_hidden_size, num_classes, self.manifold.c)
         self._init_hidden_state()
         
     def _init_hidden_state(self, last_batch_size=None):
@@ -163,7 +163,7 @@ class H_WordAttNet(nn.Module):
         return emb_layer
 
 class H_SentAttNet(nn.Module):
-    def __init__(self, sent_hidden_size=50, word_hidden_size=50, num_classes=2, content_curvature = 1):
+    def __init__(self, sent_hidden_size=50, word_hidden_size=50, num_classes=2, content_curvature = 1.0):
         super().__init__()
 
         self.Lorentz_centroid = nn.Parameter(torch.Tensor(2*sent_hidden_size))
@@ -174,8 +174,8 @@ class H_SentAttNet(nn.Module):
 
         self.gru_forward = MobiusGRU(2*word_hidden_size, sent_hidden_size)
         self.gru_backward = MobiusGRU(2*word_hidden_size, sent_hidden_size)
-        self.hyp_att_projector = MobiusLinear(2*sent_hidden_size, 2*sent_hidden_size, bias=True, c=1.0) #Todo{discard}
-        self.dot_att_projector = MobiusLinear(2*sent_hidden_size, 2*sent_hidden_size, bias=True, c=1.0)
+        self.hyp_att_projector = MobiusLinear(2*sent_hidden_size, 2*sent_hidden_size, bias=True, c=content_curvature) #Todo{discard}
+        self.dot_att_projector = MobiusLinear(2*sent_hidden_size, 2*sent_hidden_size, bias=True, c=content_curvature)
         self.dot_att_us = MobiusLinear(2*sent_hidden_size, 1, bias=False, c=1.0)
 
         self.logit_projector = MobiusLinear(2*sent_hidden_size, sent_hidden_size, bias=True, c=1.0)
@@ -226,55 +226,3 @@ class H_SentAttNet(nn.Module):
         output = (output.permute(1,0) / (1 + torch.sqrt(1 + torch.norm(output, p=2, dim=1) ** 2))).permute(1, 0)
 
         return output, f_output.permute(1, 0, 2)#added sigmoid function
-
-class SentAttNet(nn.Module):
-    def __init__(self, sent_hidden_size=50, word_hidden_size=50, num_classes=14):
-        super(SentAttNet, self).__init__()
-        self.sent_weight = nn.Parameter(torch.Tensor(2 * sent_hidden_size, 2 * sent_hidden_size))
-        self.sent_bias = nn.Parameter(torch.Tensor(1, 2 * sent_hidden_size))
-        self.context_weight = nn.Parameter(torch.Tensor(2 * sent_hidden_size, 1))
-        self.gru = nn.GRU(2 * word_hidden_size, sent_hidden_size, bidirectional=True)
-        self._create_weights(mean=0.0, std=0.05)
-
-    def _create_weights(self, mean=0.0, std=0.05):
-        self.sent_weight.data.normal_(mean, std)
-        self.context_weight.data.normal_(mean, std)
-
-    def forward(self, input, hidden_state):
-        f_output, h_output = self.gru(input, hidden_state)
-        output = matrix_mul(f_output, self.sent_weight, self.sent_bias)
-        output = matrix_mul(output, self.context_weight).permute(1, 0)
-        output = F.softmax(output, dim = -1)
-        output = element_wise_mul(f_output, output.permute(1, 0)).squeeze(0)
-        return output, f_output.permute(1, 0, 2) #return none curvature
-
-class WordAttNet(nn.Module):
-    def __init__(self, embedding_matrix, hidden_size=50):
-        super(WordAttNet, self).__init__()
-        self.word_weight = nn.Parameter(torch.Tensor(2 * hidden_size, 2 * hidden_size))
-        self.word_bias = nn.Parameter(torch.Tensor(1, 2 * hidden_size))
-        self.context_weight = nn.Parameter(torch.Tensor(2 * hidden_size, 1))
-        self.lookup = self.create_embeddeding_layer(embedding_matrix)
-        self.gru = nn.GRU(self.embedding_dim, hidden_size, bidirectional=True)
-        self._create_weights(mean=0.0, std=0.05)
-
-    def _create_weights(self, mean=0.0, std=0.05):
-        self.word_weight.data.normal_(mean, std)
-        self.context_weight.data.normal_(mean, std)
-
-    def forward(self, input, hidden_state):
-        output = self.lookup(input)
-        f_output, h_output = self.gru(output.float(), hidden_state)  # feature output and hidden state output
-        output = matrix_mul(f_output, self.word_weight, self.word_bias)
-        output = matrix_mul(output, self.context_weight).permute(1,0)
-        output = F.softmax(output, dim = -1)
-        output = element_wise_mul(f_output,output.permute(1,0))
-        return output, h_output
-        
-    def create_embeddeding_layer(self, weights_matrix, trainable=False):
-        self.num_embeddings, self.embedding_dim = weights_matrix.shape
-        weights_matrix = torch.from_numpy(weights_matrix)
-        emb_layer = nn.Embedding(self.num_embeddings, self.embedding_dim)
-        emb_layer.load_state_dict({'weight': weights_matrix})
-        emb_layer.weight.requires_grad = trainable
-        return emb_layer

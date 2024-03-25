@@ -9,18 +9,18 @@ from torch.utils.data import DataLoader
 import numpy as np
 import tqdm
 import dgl
-from utils.radam import RiemannianAdam
-from utils.metrics import Metrics
-from hyphen import Hyphen
-from utils.dataset import FakeNewsDataset
-from utils.utils import get_evaluation
+from hyptorch.geoopt.optim import RiemannianAdam
+from model.utils.metrics import Metrics
+from model.Hyphen.lorentz import Hyphen
+from model.utils.dataset import FakeNewsDataset
+from model.utils.utils import get_evaluation
 import wandb
-from tokenizers import Tokenizer, models, normalizers, pre_tokenizers, decoders, trainers
 from transformers import AutoTokenizer
 from const import DATA_PATH
+from tokenizers import Tokenizer, decoders, models, normalizers, pre_tokenizers, trainers
+from hyptorch.lorentz.manifold import CustomLorentz
 
-
-class HyphenModel:
+class Trainer:
     def __init__(
         self,
         platform,
@@ -28,11 +28,11 @@ class HyphenModel:
         max_com_len,
         max_sents,
         max_coms,
-        manifold,
         lr,
         content_module,
         comment_module,
         fourier,
+        curv=1.0
     ):
         self.model = None
         self.max_sen_len = max_sen_len
@@ -49,7 +49,7 @@ class HyphenModel:
         self.device = (
             torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
         )
-        self.manifold = manifold
+        self.manifold = CustomLorentz(k=1.0)
         self.lr = lr
         self.content_module = content_module
         self.comment_module = comment_module
@@ -60,12 +60,13 @@ class HyphenModel:
         if self.log_enable:
             wandb.init(
                 project='Hyphen',
-                name=f'{platform}_{manifold}',
+                name=f'{platform}_{self.manifold.__class__}',
                 config={
                     'dataset': platform,
-                    'type': manifold
+                    'type': self.manifold.__class__ 
                 }
             )
+            
 
     def log(self, stats):
         if self.log_enable:
@@ -79,10 +80,25 @@ class HyphenModel:
         texts = []
         texts.extend(train_x)
         texts.extend(val_x)
-        self.tokenizer = AutoTokenizer.from_pretrained('bert-base-uncased')
-        self.vocab_size = self.tokenizer.vocab_size
-        print("saved tokenizer")
+        tokenizer = Tokenizer(models.WordLevel())
+        tokenizer.normalizer = normalizers.NFKC()
+        tokenizer.pre_tokenizer = pre_tokenizers.Whitespace()
+        # tokenizer.decoder = decoders.ByteLevel()
+        trainer = trainers.WordLevelTrainer(
+            vocab_size=500000,
+            initial_alphabet=pre_tokenizers.ByteLevel.alphabet(),
+            special_tokens=["<PAD>", "<BOS>", "<EOS>"],
+        )
+        all_sentences = []
+        for text in texts:
+            for sentence in text:
+                all_sentences.append(sentence)
 
+        tokenizer.train_from_iterator(all_sentences, trainer=trainer)
+
+        self.tokenizer = tokenizer 
+
+        print("saved tokenizer")
 
 
     def _build_model(self, n_classes=2, batch_size=12, embedding_dim=100):
@@ -106,7 +122,7 @@ class HyphenModel:
         f.close()
 
         # get word index
-        word_index = self.tokenizer.vocab
+        word_index = self.tokenizer.get_vocab()
         embedding_matrix = np.random.random((len(word_index) + 1, embedding_dim))
 
         # create embedding matrix.
@@ -123,12 +139,12 @@ class HyphenModel:
             self.graph_hidden,
         ) = (50, 50, 50, 50, 100)
         model = Hyphen(
-            embedding_matrix,
-            self.word_hidden_size,
-            self.sent_hidden_size,
-            self.max_sent_length,
-            self.max_word_length,
-            self.device,
+            embedding_matrix=embedding_matrix,
+            word_hidden_size=self.word_hidden_size,
+            sent_hidden_size=self.sent_hidden_size,
+            max_sent_length=self.max_sent_length,
+            max_word_length=self.max_word_length,
+            device=self.device,
             graph_hidden=self.graph_hidden,
             batch_size=batch_size,
             num_classes=n_classes,
@@ -143,13 +159,10 @@ class HyphenModel:
 
         model = model.to(self.device)
 
-        if self.manifold == "Euclidean":  # choose the manifold
-            self.optimizer = optim.Adam(model.parameters(), lr=self.lr)
-        elif self.manifold == "PoincareBall":
-            self.optimizer = RiemannianAdam(model.parameters(), lr=self.lr)
+        self.optimizer = RiemannianAdam(model.parameters(), lr=self.lr)
 
         self.criterion = nn.CrossEntropyLoss()
-
+      
         return model
 
     def _encode_texts(self, texts):
@@ -159,23 +172,26 @@ class HyphenModel:
         :return:
         """
         encoded_texts = np.zeros((len(texts), self.max_sents, self.max_sen_len), dtype='int32')
-        print(encoded_texts.shape)
         for i, text in enumerate(texts):
             # ids = [item.ids for item in self.tokenizer.encode_batch(text)]
-            ids = self.tokenizer(text, return_tensors='np', padding=True, truncation=True, max_length=self.max_sen_len)['input_ids']
-            encoded_text = np.array(
-                torch.nn.functional.pad(
-                    torch.from_numpy(ids),
-                    pad=(0, self.max_sen_len - torch.tensor(ids).shape[1]), 
+            sents = self.tokenizer.encode_batch(text)
+            encoded_sents = []
+            for sent in sents:
+                encoded_sent = np.array(torch.nn.functional.pad(
+                    torch.tensor(sent.ids)[np.newaxis, ...],
+                    pad=(0, self.max_sen_len - torch.tensor(sent.ids).shape[0]), 
                     mode='constant', 
                     value=0
-                )
-            )[:self.max_sents]
+                ))
+                encoded_sents.append(encoded_sent)
+
+            encoded_sents = np.concatenate(encoded_sents, axis=0)
+            # print(encoded_sents)
             
-            encoded_texts[i][:len(encoded_text)] = encoded_text
+            encoded_texts[i][:len(encoded_sents)] = encoded_sents
+            
 
         return encoded_texts
-
 
     def test(
         self,
@@ -194,6 +210,9 @@ class HyphenModel:
         self.model = self._build_model(
             n_classes=train_y.shape[-1], batch_size=batch_size, embedding_dim=100
         )
+        if self.log_enable:
+            wandb.watch(self.model, log='all')
+
         print("Model built.")
 
         print("Encoding texts....")
@@ -307,7 +326,7 @@ class HyphenModel:
         print("Encoding texts....")
         # Create encoded input for content and comments
         encoded_train_x = self._encode_texts(train_x)
-        print(encoded_train_x.shape)
+        # print(encoded_train_x.shape)
         encoded_val_x = self._encode_texts(val_x)
         print("preparing dataset....")
 
@@ -359,7 +378,6 @@ class HyphenModel:
         # train model for given epoch
         self.run_epoch(epochs)
 
-        
     def run_epoch(self, epochs):
         """
         Function to train model for given epochs
@@ -394,6 +412,7 @@ class HyphenModel:
                 )  # As and Ac are the attention weights we are returning
                 loss = self.criterion(predictions, label)
                 loss.backward()
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
                 self.optimizer.step()
 
                 training_metrics = get_evaluation(
@@ -403,7 +422,7 @@ class HyphenModel:
                 )
                 self.log({
                     "Train/Loss": loss, 
-                    "Epoch": epoch * num_iter_per_epoch + iter,
+                    "Train/Epoch": epoch * num_iter_per_epoch + iter,
                     "Train/Accuracy":training_metrics["accuracy"],
                 })
 

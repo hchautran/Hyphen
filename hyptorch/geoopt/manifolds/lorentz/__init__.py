@@ -36,6 +36,7 @@ class Lorentz(Manifold):
 
     def __init__(self, k=1.0, learnable=False):
         super().__init__()
+        print('init k', k)
         k = torch.as_tensor(k)
         if not torch.is_floating_point(k):
             k = k.to(torch.get_default_dtype())

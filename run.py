@@ -3,8 +3,8 @@ import os
 import pickle
 import argparse
 parser = argparse.ArgumentParser()
-from lorentz_main import HyphenModel as LorentzModel
-from main import HyphenModel as PoincareModel
+from LorentzTrainer import Trainer as LorentzTrainer
+from PoincareTrainer import Trainer as PoincareTrainer
 from dgl import heterograph
 from const import DATA_PATH
 
@@ -42,26 +42,25 @@ sub_train, sub_val = props['train']['subgraphs'], props['val']['subgraphs']
 
 
 if args.manifold != 'Lorentz':
-    hyphen = PoincareModel(
+    hyphen = PoincareTrainer(
         args.dataset, 
         args.max_sent_len, 
         args.max_com_len, 
         args.max_sents, 
         args.max_coms, 
-        manifold= args.manifold, 
         lr = args.lr, 
         comment_module=args.no_comment, 
         content_module=args.no_content, 
-        fourier = args.no_fourier
+        fourier = args.no_fourier,
+        curv=1.0,
     )
 else:
-    hyphen = LorentzModel(
+    hyphen = LorentzTrainer(
         args.dataset, 
         args.max_sent_len, 
         args.max_com_len, 
         args.max_sents, 
         args.max_coms, 
-        manifold= args.manifold, 
         lr = args.lr, 
         comment_module=args.no_comment, 
         content_module=args.no_content, 

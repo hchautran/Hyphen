@@ -5,6 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.nn.init as init
 from torch.nn.modules.module import Module
+from hyptorch.geoopt.manifolds import PoincareBall
 
 class HGCNLayer(nn.Module):
     """
@@ -31,7 +32,7 @@ class HypLinear(nn.Module):
     Hyperbolic linear layer.
     """
 
-    def __init__(self, manifold, in_features, out_features, c, dropout, use_bias):
+    def __init__(self, manifold:PoincareBall, in_features, out_features, c, dropout, use_bias):
         super(HypLinear, self).__init__()
         self.manifold = manifold
         self.in_features = in_features
@@ -49,14 +50,12 @@ class HypLinear(nn.Module):
 
     def forward(self, x):
         weight = F.dropout(self.weight, self.dropout, training=self.training)
-        mv = self.manifold.mobius_matvec(m = weight, x = x, c = self.c)
-        res = self.manifold.proj(mv, self.c)
+        mv = self.manifold.mobius_matvec(m=weight, x=x)
+        res = self.manifold.projx(mv)
         if self.use_bias:
-            bias = self.manifold.proj_tan0(self.bias, self.c)
-            hyp_bias = self.manifold.expmap0(bias, self.c)
-            hyp_bias = self.manifold.proj(hyp_bias, self.c)
-            res = self.manifold.mobius_add(res, hyp_bias, c=self.c)
-            res = self.manifold.proj(res, self.c)
+            hyp_bias = self.manifold.expmap0(self.bias)
+            res = self.manifold.mobius_add(res, hyp_bias)
+            res = self.manifold.projx(res)
         return res
 
     def extra_repr(self):
@@ -70,7 +69,7 @@ class HypAgg(Module):
     Hyperbolic aggregation layer.
     """
 
-    def __init__(self, manifold, c, in_features, dropout):
+    def __init__(self, manifold:PoincareBall, c, in_features, dropout):
         super(HypAgg, self).__init__()
         self.manifold = manifold
         self.c = c
@@ -78,11 +77,11 @@ class HypAgg(Module):
         self.dropout = dropout
 
     def forward(self, x, adj):
-        x_tangent = self.manifold.logmap0(x, c=self.c)
+        x_tangent = self.manifold.logmap0(x)
 
      
         support_t = torch.mm(adj.to_dense(), x_tangent)
-        output = self.manifold.proj(self.manifold.expmap0(support_t, c=self.c), c=self.c)
+        output = self.manifold.expmap0(support_t)
         return output
 
     def extra_repr(self):
@@ -94,7 +93,7 @@ class HypAct(Module):
     Hyperbolic activation layer.
     """
 
-    def __init__(self, manifold, c_in, c_out, act):
+    def __init__(self, manifold:PoincareBall, c_in, c_out, act):
         super(HypAct, self).__init__()
         self.manifold = manifold
         self.c_in = c_in
@@ -102,9 +101,8 @@ class HypAct(Module):
         self.act = act
 
     def forward(self, x):
-        xt = self.act(self.manifold.logmap0(x, c=self.c_in))
-        xt = self.manifold.proj_tan0(xt, c=self.c_out)
-        return self.manifold.proj(self.manifold.expmap0(xt, c=self.c_out), c=self.c_out)
+        xt = self.act(self.manifold.logmap0(x))
+        return self.manifold.expmap0(xt) 
 
     def extra_repr(self):
         return 'c_in={}, c_out={}'.format(

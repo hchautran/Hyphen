@@ -25,7 +25,8 @@ class CustomLorentz(Lorentz):
 
     def calc_time(self, space):
         """Calculates time component from given space component."""
-        return torch.sqrt(torch.norm(space, dim=-1, keepdim=True) ** 2 + self.k)
+        time = torch.sqrt(torch.norm(space, dim=-1, keepdim=True) ** 2 + self.k)
+        return time 
 
 
     def matmul(self, x: torch.Tensor, y: torch.Tensor):

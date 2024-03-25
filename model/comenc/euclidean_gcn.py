@@ -2,45 +2,34 @@ import torch.nn as nn
 import dgl
 import torch
 import torch.nn as nn
-from utils.layers.hyp_layers import *
-from utils.manifolds import PoincareBall
+from ..utils.layers.hyp_layers import *
+from torch_geometric.nn import Sequential, GCNConv
 
 
-class HypComEnc(nn.Module):
+class ComEnc(nn.Module):
     def __init__(
         self,
         in_dim,
         hidden_dim,
-        n_classes,
         max_comment_count,
         device,
-        manifold,
         content_module,
-        comment_curvature,
     ):
-        super(HypComEnc, self).__init__()
-        self.manifold = manifold
-        self.c = comment_curvature
-        self.conv1 = HGCNLayer(
-            self.manifold,
+        super(ComEnc, self).__init__()
+        self.conv1 = GCNConv(
             in_dim,
             hidden_dim,
-            c_in=self.c,
-            c_out=self.c,
-            act=torch.tanh,
             dropout=0.1,
             use_bias=True,
         )
-        self.conv2 = HGCNLayer(
-            self.manifold,
+        self.act1 = nn.Tanh()
+        self.conv2 = GCNConv(
             hidden_dim,
             hidden_dim,
-            c_in=self.c,
-            c_out=self.c,
-            act=torch.tanh,
             dropout=0.1,
             use_bias=True,
         )
+        self.act2 = nn.Tanh()
         self.max_comment_count = max_comment_count
         self.hidden_dim = hidden_dim
         self.device = device
@@ -54,22 +43,10 @@ class HypComEnc(nn.Module):
         adj = g.adj().to(self.device)  # finding the adjacency matrix
         inp = h.to(self.device)  # convertng to sparse tensor
 
-        if isinstance(self.manifold, PoincareBall):
-            inp = torch.cat(
-                [
-                    self.manifold.proj(
-                        self.manifold.expmap0(
-                            self.manifold.proj_tan0(i, c=self.c), c=self.c
-                        ),
-                        c=self.c,
-                    ).unsqueeze(0)
-                    for i in inp
-                ],
-                axis=0,
-            )
-
         out, adj = self.conv1((inp, adj))
+        out= self.act1(out)
         out, adj = self.conv2((out, adj))
+        out = self.act2(out)
         # print(out)
         h = out  # converting back to dense
         h = self.manifold.logmap0(self.manifold.proj(h, c=self.c), c=self.c)
