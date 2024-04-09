@@ -41,7 +41,7 @@ class CoAttention(nn.Module):
         self.concat_m1 = nn.Parameter(torch.Tensor((1, 1)))
         self.concat_m2 = nn.Parameter(torch.Tensor((1, 1)))
         self.concat_b = nn.Parameter(torch.Tensor((1, self.embedding_dim)))
-        self.act = LorentzAct(manifold=self.lorentz,activation=nn.GELU()) 
+        self.act = LorentzAct(manifold=self.lorentz,activation=nn.Tanh()) 
 
         # register weights and bias as params
         # self.register_parameter("Wl", self.Wl)
@@ -108,8 +108,8 @@ class CoAttention(nn.Module):
         # print(Hs_b.shape)
 
         Hs_b = self.poincare.mobius_matvec(Hs_b.transpose(-1,-2), L)
-
         Hs = self.poincare.mobius_add(Hs_a, Hs_b)
+        # Hs = self.act(lmath.poincare_to_lorentz(Hs, k=curv))
         Hs = self.poincare.expmap0(torch.tanh(self.poincare.logmap0(Hs)))  # [32, 80, 50]
 
         # Hc = torch.tanh(torch.matmul(self.Wc, comment_rep_trans)+ torch.matmul(torch.matmul(self.Ws, sentence_rep_trans), L_trans))
@@ -122,6 +122,7 @@ class CoAttention(nn.Module):
         Hc_b = self.poincare.mobius_matvec(Hc_b.transpose(-1,-2), L.transpose(-1, -2))
         Hc = self.poincare.mobius_add(Hc_a.transpose(-1,-2), Hc_b.transpose(-1,-2))
         Hc = self.poincare.expmap0(torch.tanh(self.poincare.logmap0(Hc)))  # [32, 80, 10]
+        # Hc = self.act(lmath.poincare_to_lorentz(Hc, k=curv))
 
         As = self.poincare.mobius_matvec(self.whs, Hs) 
         As = F.softmax(As.transpose(-1, -2), dim=-1)

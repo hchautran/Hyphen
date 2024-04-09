@@ -17,6 +17,7 @@ from utils.utils import get_evaluation
 import wandb
 from tokenizers import Tokenizer, models, normalizers, pre_tokenizers, decoders, trainers
 from transformers import AutoTokenizer
+DATA_PATH = '/Volumes/ExtraSpace/'
 
 
 class HyphenModel:
@@ -90,7 +91,7 @@ class HyphenModel:
         """
         embeddings_index = {}
 
-        self.glove_dir = "glove.twitter.27B.100d.txt"
+        self.glove_dir = f"{DATA_PATH}/glove.twitter.27B.100d.txt"
 
         f = open(self.glove_dir, encoding="utf-8")
 
