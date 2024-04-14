@@ -32,8 +32,10 @@ class HyphenModel:
         content_module,
         comment_module,
         fourier,
+        use_gat=False
     ):
         self.model = None
+        self.use_gat = use_gat
         self.max_sen_len = max_sen_len
         self.max_sents = max_sents
         self.max_coms = max_coms
@@ -137,6 +139,7 @@ class HyphenModel:
             comment_module=self.comment_module,
             content_module=self.content_module,
             fourier=self.fourier,
+            use_gat=self.use_gat
         )
         print("Hyphen built")
 

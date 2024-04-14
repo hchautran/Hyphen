@@ -21,6 +21,7 @@ parser.add_argument('--max-com-len', type = int, default= 10, help='Specify the 
 parser.add_argument('--max-sent-len', type = int, default = 10, help='Specify the maximum length of a news sentence.')
 parser.add_argument('--batch-size', type = int,  default = 32,  help='Specify the batch size of the dataset.')
 parser.add_argument('--epochs', type = int, default= 5, help='The number of epochs to train Hyphen.')
+parser.add_argument('--use_gat', default=False, action='store_true', help='use graph attention network')
 
 args = parser.parse_args()
 
@@ -45,7 +46,8 @@ if args.manifold != 'Lorentz':
         lr = args.lr, 
         comment_module=args.no_comment, 
         content_module=args.no_content, 
-        fourier = args.no_fourier
+        fourier = args.no_fourier,
+        use_gat= args.use_gat
     )
 else:
     hyphen = LorentzModel(
@@ -58,7 +60,9 @@ else:
         lr = args.lr, 
         comment_module=args.no_comment, 
         content_module=args.no_content, 
-        fourier = args.no_fourier
+        fourier = args.no_fourier,
+        use_gat=args.use_gat
     )
 
 hyphen.train(x_train, y_train, c_train, c_val, x_val, y_val, sub_train, sub_val, batch_size= args.batch_size, epochs=args.epochs)
+

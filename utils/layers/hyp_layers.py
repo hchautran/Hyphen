@@ -30,7 +30,6 @@ class HypLinear(nn.Module):
     """
     Hyperbolic linear layer.
     """
-
     def __init__(self, manifold, in_features, out_features, c, dropout, use_bias):
         super(HypLinear, self).__init__()
         self.manifold = manifold
