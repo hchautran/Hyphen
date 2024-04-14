@@ -32,7 +32,7 @@ class HypComEnc(nn.Module):
                 dropout=0.1,
                 activation=torch.tanh,
                 alpha=0.0,
-                nheads=2,
+                nheads=4,
                 concat=False,
             )
             self.conv2 = GraphAttentionLayer(
@@ -42,7 +42,7 @@ class HypComEnc(nn.Module):
                 dropout=0.1,
                 activation=torch.tanh,
                 alpha=0.0,
-                nheads=2,
+                nheads=4,
                 concat=False,
             )
         else:

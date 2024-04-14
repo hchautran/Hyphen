@@ -2,7 +2,9 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from hyptorch.geoopt.manifolds.lorentz import math as lmath
 
+eps = 1e-7
 
 class DenseAtt(nn.Module):
     def __init__(self, in_features, dropout):
@@ -122,6 +124,11 @@ class SpGraphAttentionLayer(nn.Module):
     def __repr__(self):
         return self.__class__.__name__ + ' (' + str(self.in_features) + ' -> ' + str(self.out_features) + ')'
 
+def P2Lorentz(input):
+    """Function to convert fromm Poincare model to the Lorentz model"""
+    rr = torch.norm(input, p=2, dim=2)
+    output = torch.cat((2*input, (1+rr**2).unsqueeze(2)),dim=2).permute(2,0,1)/(1-rr**2+eps)
+    return output.permute(1,2,0)
 
 class GraphAttentionLayer(nn.Module):
     def __init__(self, manifold ,input_dim, output_dim, dropout, activation, alpha, nheads, concat):
@@ -129,6 +136,7 @@ class GraphAttentionLayer(nn.Module):
         super(GraphAttentionLayer, self).__init__()
         self.dropout = dropout
         self.output_dim = output_dim
+        self.manifold = manifold
         self.attentions = [
             SpGraphAttentionLayer(
                 manifold,
@@ -144,12 +152,14 @@ class GraphAttentionLayer(nn.Module):
             self.add_module('attention_{}'.format(i), attention)
 
     def forward(self, input):
+        c = 1.0
         x, adj = input
         x = F.dropout(x, self.dropout, training=self.training)
         if self.concat:
             h = torch.cat([att(x, adj) for att in self.attentions], dim=1)
         else:
             h_cat = torch.cat([att(x, adj).view((-1, self.output_dim, 1)) for att in self.attentions], dim=2)
-            h = torch.mean(h_cat, dim=2)
+            h = self.manifold.expmap0(torch.mean(self.manifold.logmap0(h_cat, c=c), dim=2), c=c)
+
         h = F.dropout(h, self.dropout, training=self.training)
         return (h, adj)

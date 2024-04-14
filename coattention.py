@@ -77,7 +77,6 @@ class CoAttention(nn.Module):
         curv = self.c
 
         if self.fourier:
-            # KFU
             sentence_rep = logmap0(sentence_rep, c=curv)
             sentence_rep = torch.fft.fft2(sentence_rep).float()
 
