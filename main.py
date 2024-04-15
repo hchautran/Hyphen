@@ -33,6 +33,7 @@ class HyphenModel:
         content_module,
         comment_module,
         fourier,
+        log_enable=False
     ):
         self.model = None
         self.max_sen_len = max_sen_len
@@ -56,7 +57,7 @@ class HyphenModel:
         self.fourier = fourier
         self.platform = platform
      
-        self.log_enable = False 
+        self.log_enable = log_enable 
         if self.log_enable:
             wandb.init(
                 project='Hyphen',

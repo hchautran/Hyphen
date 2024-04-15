@@ -32,7 +32,8 @@ class HyphenModel:
         content_module,
         comment_module,
         fourier,
-        use_gat=False
+        use_gat=False,
+        log_enable=False,
     ):
         self.model = None
         self.use_gat = use_gat
@@ -56,8 +57,7 @@ class HyphenModel:
         self.comment_module = comment_module
         self.fourier = fourier
         self.platform = platform
-     
-        self.log_enable = False 
+        self.log_enable = log_enable 
         if self.log_enable:
             wandb.init(
                 project='Hyphen',
