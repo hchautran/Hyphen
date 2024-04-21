@@ -5,8 +5,8 @@ from hyptorch.geoopt.manifolds.lorentz import math as lmath
 from hyptorch.lorentz.manifold import CustomLorentz
 from hyptorch.lorentz.layers.LAttn import CrossAttention 
 from utils.manifolds import PoincareBall
-from lorentz_coattention import CoAttention 
-from coattention import CoAttention 
+from lcoattention import CoAttention 
+from pcoattention import CoAttention 
 from transformers import CLIPTextConfig 
 
 

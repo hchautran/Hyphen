@@ -4,8 +4,9 @@ import pickle
 import argparse
 import pickle
 parser = argparse.ArgumentParser()
-from lorentz_main import HyphenModel as LorentzModel
-from main import HyphenModel as PoincareModel
+from lcontroller import HyphenModel as LorentzModel
+from pcontroller import HyphenModel as PoincareModel
+from hyphatcontroller import HyphatModel 
 from dgl import heterograph
 
 parser.add_argument('--manifold', choices=['PoincareBall', 'Euclidean', 'Lorentz'], default = 'PoincareBall', help='Choose the underlying manifold for Hyphen')
@@ -23,6 +24,7 @@ parser.add_argument('--batch-size', type = int,  default = 32,  help='Specify th
 parser.add_argument('--epochs', type = int, default= 5, help='The number of epochs to train Hyphen.')
 parser.add_argument('--use_gat', default=False, action='store_true', help='use graph attention network')
 parser.add_argument('--enable-log', default=False, action='store_true', help='use graph attention network')
+parser.add_argument('--model', default="hyphen")
 
 args = parser.parse_args()
 
@@ -35,36 +37,51 @@ y_train, y_val = props['train']['y'], props['val']['y']
 c_train, c_val = props['train']['c'], props['val']['c']
 sub_train, sub_val = props['train']['subgraphs'], props['val']['subgraphs']
 
-
-if args.manifold != 'Lorentz':
-    hyphen = PoincareModel(
-        args.dataset, 
-        args.max_sent_len, 
-        args.max_com_len, 
-        args.max_sents, 
-        args.max_coms, 
-        manifold= args.manifold, 
-        lr = args.lr, 
-        comment_module=args.no_comment, 
-        content_module=args.no_content, 
-        fourier = args.no_fourier,
-        log_enable=args.enable_log
-    )
+if args.model == 'hyphen':
+    if args.manifold != 'Lorentz':
+        model = PoincareModel(
+            args.dataset, 
+            args.max_sent_len, 
+            args.max_com_len, 
+            args.max_sents, 
+            args.max_coms, 
+            manifold= args.manifold, 
+            lr = args.lr, 
+            comment_module=args.no_comment, 
+            content_module=args.no_content, 
+            fourier = args.no_fourier,
+            log_enable=args.enable_log
+        )
+    else:
+        model = LorentzModel(
+            args.dataset, 
+            args.max_sent_len, 
+            args.max_com_len, 
+            args.max_sents, 
+            args.max_coms, 
+            manifold= args.manifold, 
+            lr = args.lr, 
+            comment_module=args.no_comment, 
+            content_module=args.no_content, 
+            fourier = args.no_fourier,
+            use_gat=args.use_gat,
+            log_enable=args.enable_log
+        )
 else:
-    hyphen = LorentzModel(
-        args.dataset, 
-        args.max_sent_len, 
-        args.max_com_len, 
-        args.max_sents, 
-        args.max_coms, 
-        manifold= args.manifold, 
-        lr = args.lr, 
-        comment_module=args.no_comment, 
-        content_module=args.no_content, 
-        fourier = args.no_fourier,
-        use_gat=args.use_gat,
-        log_enable=args.enable_log
-    )
+        model = HyphatModel(
+            args.dataset, 
+            args.max_sent_len, 
+            args.max_com_len, 
+            args.max_sents, 
+            args.max_coms, 
+            manifold= args.manifold, 
+            lr = args.lr, 
+            comment_module=args.no_comment, 
+            content_module=args.no_content, 
+            fourier = args.no_fourier,
+            use_gat=args.use_gat,
+            log_enable=args.enable_log
+        )
 
-hyphen.train(x_train, y_train, c_train, c_val, x_val, y_val, sub_train, sub_val, batch_size= args.batch_size, epochs=args.epochs)
+model.train(x_train, y_train, c_train, c_val, x_val, y_val, sub_train, sub_val, batch_size= args.batch_size, epochs=args.epochs)
 

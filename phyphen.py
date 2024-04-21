@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn as nn
 
-from coattention import CoAttention
+from pcoattention import CoAttention
 from hypComEnc import HypComEnc
 from hypPostEnc import HypPostEnc
 from utils.layers.hyp_layers import *

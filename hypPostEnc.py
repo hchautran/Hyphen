@@ -17,6 +17,8 @@ from utils.nets import MobiusGRU
 from utils.nets import MobiusLinear
 from utils.nets import MobiusDist2Hyperplane
 from utils.utils import matrix_mul, element_wise_mul
+from transformers import DistilBertConfig, DistilBertModel
+from hyp_math import *
 
 eps = 1e-7
 
@@ -32,11 +34,9 @@ class HypPostEnc(nn.Module):
         self.max_word_length = max_word_length
         self.manifold = manifold
         self.content_curvature = content_curvature
-
         if isinstance(self.manifold, Euclidean):
             self.word_att_net = WordAttNet(embedding_matrix, word_hidden_size)
             self.sent_att_net = SentAttNet(sent_hidden_size, word_hidden_size, num_classes)
-
         else:
             self.word_att_net = H_WordAttNet(embedding_matrix, word_hidden_size)
             self.sent_att_net = H_SentAttNet(sent_hidden_size, word_hidden_size, num_classes, self.content_curvature)
@@ -55,7 +55,6 @@ class HypPostEnc(nn.Module):
         self.word_hidden_state = self.word_hidden_state.to(self.device)
         self.sent_hidden_state = self.sent_hidden_state.to(self.device)
 
-
     def forward(self, input):
         output_list = []
         input = input.permute(1, 0, 2)
@@ -65,38 +64,6 @@ class HypPostEnc(nn.Module):
         output = torch.cat(output_list, 0)
         output, h_output = self.sent_att_net(output, self.sent_hidden_state)
         return output, h_output
-
-def E2Lorentz(input):
-    """Function to convert fromm Euclidean space to the Lorentz model"""
-    rr = torch.norm(input, p=2, dim=2)
-    dd = input.permute(2,0,1) / rr
-    cosh_r = torch.cosh(rr)
-    sinh_r = torch.sinh(rr)
-    output = torch.cat(((dd * sinh_r).permute(1, 2, 0), cosh_r.unsqueeze(0).permute(1, 2, 0)), dim=2)
-    return output
-
-def P2Lorentz(input):
-    """Function to convert fromm Poincare model to the Lorentz model"""
-    rr = torch.norm(input, p=2, dim=2)
-    output = torch.cat((2*input, (1+rr**2).unsqueeze(2)),dim=2).permute(2,0,1)/(1-rr**2+eps)
-    return output.permute(1,2,0)
-
-def L2Klein(input):
-    """Function to convert fromm Lorentz model to the Klein model"""
-    dump = input[:, :, -1]
-    dump = torch.clamp(dump, eps, 1.0e+16)
-    return (input[:, :, :-1].permute(2, 0, 1)/dump).permute(1, 2, 0)
-
-def arcosh(x):
-    c0 = torch.log(x)
-    c1 = torch.log1p(torch.sqrt(x * x - 1 + eps) / x)
-    return c0 + c1
-
-def disLorentz(x, y):
-    m = x * y
-    prod_minus = -m[:, :, :-1].sum(dim=2) + m[:, :, -1]
-    output = torch.clamp(prod_minus, 1.0 + eps, 1.0e+16)
-    return arcosh(output)
 
 class H_WordAttNet(nn.Module):
     def __init__(self, embedding_matrix, hidden_size = 50):
@@ -123,10 +90,8 @@ class H_WordAttNet(nn.Module):
     def forward(self, input, hidden_state):
 
         output = self.lookup(input)
-
         self.gru.flatten_parameters()  # Todo{flatten()}
         f_output, h_output = self.gru(output.float(), hidden_state)
-    
         ## lorentz attention
         hyp_alpha = torch.tanh_(self.attn2(f_output))
         hyp_alpha = E2Lorentz(hyp_alpha)  # (46,128,101)
@@ -195,7 +160,6 @@ class H_SentAttNet(nn.Module):
 
         f_output1, h_output1 = self.gru_forward(input, hidden_state[0])
         f_output2, h_output2 = self.gru_backward(torch.flip(input,(0,)), hidden_state[1])
-
         # on Poincare
         h_output = torch.cat((h_output1, h_output2), 0)
         f_output = torch.cat((f_output1, f_output2), 2)
