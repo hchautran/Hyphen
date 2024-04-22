@@ -38,15 +38,15 @@ class HyphatPost(nn.Module):
         self.device = device
         self.word_config = DistilBertConfig(
             dim=100, 
-            hidden_dim=2*word_hidden_size, 
-            n_layers=3,
-            n_heads=2
+            hidden_dim=4*word_hidden_size, 
+            n_layers=1,
+            n_heads=1
         )
         self.sent_config = DistilBertConfig(
             dim=100, 
-            hidden_dim=2*sent_hidden_size, 
+            hidden_dim=4*sent_hidden_size, 
             n_layers=1,
-            n_heads=2
+            n_heads=1
         )
         self.max_sent_length = max_sent_length
         self.max_word_length = max_word_length
