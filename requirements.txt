@@ -14,5 +14,7 @@ tqdm
 transformers
 wandb
 geoopt
+chardet
 unicode
 word2number
+cudatoolkit

@@ -17,7 +17,8 @@ from utils.utils import get_evaluation
 import wandb
 from tokenizers import Tokenizer, models, normalizers, pre_tokenizers, decoders, trainers
 from transformers import AutoTokenizer
-DATA_PATH = '/Volumes/ExtraSpace/'
+import os
+DATA_PATH = os.getcwd() 
 
 
 class HyphenModel:

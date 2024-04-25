@@ -16,8 +16,9 @@ from utils.dataset import FakeNewsDataset
 from utils.utils import get_evaluation
 import wandb
 from transformers import AutoTokenizer
+import os
 
-DATA_PATH = '/Volumes/ExtraSpace/'
+DATA_PATH = os.getcwd() 
 
 class HyphenModel:
     def __init__(
