@@ -16,9 +16,11 @@ from utils.dataset import FakeNewsDataset
 from utils.utils import get_evaluation
 import wandb
 from transformers import AutoTokenizer
+from accelerate import Accelerator
 import os
 
 DATA_PATH = os.getcwd()
+accelerator = Accelerator()
 
 class HyphatModel:
     def __init__(
@@ -36,6 +38,7 @@ class HyphatModel:
         use_gat=False,
         log_enable=False,
     ):
+        self.device = accelerator.device
         self.model = None
         self.use_gat = use_gat
         self.max_sen_len = max_sen_len
@@ -49,9 +52,9 @@ class HyphatModel:
         self.sentence_comment_co_model = None
         self.tokenizer = None
         self.metrics = Metrics()
-        self.device = (
-            torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
-        )
+        # self.device = (
+            # torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
+        # )
         self.manifold = manifold
         self.lr = lr
         self.content_module = content_module
@@ -61,11 +64,13 @@ class HyphatModel:
         self.log_enable = log_enable 
         if self.log_enable:
             wandb.init(
-                project='Hyphen',
-                name=f'{platform}_{manifold}',
+                project='Hyphat',
+                name=f'{platform}_{manifold}_{"gcn" if not use_gat else "gat"}',
                 config={
                     'dataset': platform,
-                    'type': manifold
+                    'type': manifold,
+                    'use gat': use_gat,  
+                    'model':'hyphat'
                 }
             )
             
@@ -145,8 +150,10 @@ class HyphatModel:
         )
         print("Hyphen built")
 
-        model = model.to(self.device)
+        model = accelerator.prepare(model) 
         self.optimizer = RiemannianAdam(model.parameters(), lr=self.lr)
+        self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer=self.optimizer, mode='max', patience=5, min_lr=1e-7)
+        self.optimizer, self.scheduler  = accelerator.prepare(self.optimizer, self.scheduler)
         self.criterion = nn.CrossEntropyLoss()
         return model
 
@@ -241,6 +248,7 @@ class HyphatModel:
             drop_last=True,
         )
 
+        val_loader, train_loader = accelerator.prepare(val_loader, train_loader)
         self.dataset_sizes = {
             "train": train_dataset.__len__(),
             "val": val_dataset.__len__(),
@@ -262,9 +270,9 @@ class HyphatModel:
             content, comment, label, subgraphs = sample
             num_sample = len(label)  # last batch size
             total_samples += num_sample
-            comment = comment.to(self.device)
-            content = content.to(self.device)
-            label = label.to(self.device)
+            # comment = comment.to(self.device)
+            # content = content.to(self.device)
+            # label = label.to(self.device)
             predictions, As, Ac = self.model(content, comment, subgraphs)
             te_loss = self.criterion(predictions, label)
             loss_ls.append(te_loss * num_sample)
@@ -346,6 +354,8 @@ class HyphatModel:
             drop_last=True,
         )
 
+        train_loader, val_loader = accelerator.prepare(train_loader, val_loader)
+
         self.dataset_sizes = {
             "train": train_dataset.__len__(),
             "val": val_dataset.__len__(),
@@ -382,9 +392,9 @@ class HyphatModel:
 
                 content, comment, label, subgraphs = sample
 
-                comment = comment.to(self.device)
-                content = content.to(self.device)
-                label = label.to(self.device)
+                # comment = comment.to(self.device)
+                # content = content.to(self.device)
+                # label = label.to(self.device)
                 # self.model.content_encoder._init_hidden_state(len(label))
                 predictions = self.model(
                     content, comment, subgraphs
@@ -413,9 +423,9 @@ class HyphatModel:
                 num_sample = len(label)  # last batch size
                 total_samples += num_sample
 
-                comment = comment.to(self.device)
-                content = content.to(self.device)
-                label = label.to(self.device)
+                # comment = comment.to(self.device)
+                # content = content.to(self.device)
+                # label = label.to(self.device)
 
                 # self.model.content_encoder._init_hidden_state(num_sample)
 
@@ -433,6 +443,7 @@ class HyphatModel:
                 self.metrics.on_batch_end(epoch, i, predictions, label)
 
             acc_, f1 = self.metrics.on_epoch_end(epoch)
+            self.scheduler.step(f1)
             if f1 > best_f1:
                 print(f"Best F1: {f1}")
                 print("Saving best model!")

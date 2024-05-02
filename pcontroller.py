@@ -15,11 +15,13 @@ from phyphen import Hyphen
 from utils.dataset import FakeNewsDataset
 from utils.utils import get_evaluation
 import wandb
-from tokenizers import Tokenizer, models, normalizers, pre_tokenizers, decoders, trainers
+# from tokenizers import Tokenizer, models, normalizers, pre_tokenizers, decoders, trainers
 from transformers import AutoTokenizer
+from accelerate import Accelerator
 import os
 DATA_PATH = os.getcwd() 
 
+accelerator = Accelerator()
 
 class HyphenModel:
     def __init__(
@@ -48,9 +50,7 @@ class HyphenModel:
         self.sentence_comment_co_model = None
         self.tokenizer = None
         self.metrics = Metrics()
-        self.device = (
-            torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
-        )
+        self.device = accelerator.device 
         self.manifold = manifold
         self.lr = lr
         self.content_module = content_module
@@ -61,11 +61,12 @@ class HyphenModel:
         self.log_enable = log_enable 
         if self.log_enable:
             wandb.init(
-                project='Hyphen',
-                name=f'{platform}_{manifold}',
+                project='Hyphat',
+                name=f'{platform}_{manifold}_gcn',
                 config={
                     'dataset': platform,
-                    'type': manifold
+                    'type': manifold,
+                    'model': 'hyphen',  
                 }
             )
 
@@ -142,12 +143,13 @@ class HyphenModel:
         )
         print("Hyphen built")
 
-        model = model.to(self.device)
+        model = accelerator.prepare(model)
 
         if self.manifold == "Euclidean":  # choose the manifold
             self.optimizer = optim.Adam(model.parameters(), lr=self.lr)
         elif self.manifold == "PoincareBall":
             self.optimizer = RiemannianAdam(model.parameters(), lr=self.lr)
+        self.optimizer = accelerator.prepare(self.optimizer)
 
         self.criterion = nn.CrossEntropyLoss()
 
@@ -241,6 +243,7 @@ class HyphenModel:
             drop_last=True,
         )
 
+        train_loader, val_loader = accelerator.prepare(train_loader, val_loader)
         self.dataset_sizes = {
             "train": train_dataset.__len__(),
             "val": val_dataset.__len__(),
@@ -349,6 +352,8 @@ class HyphenModel:
             shuffle=True,
             drop_last=True,
         )
+
+        train_loader, val_loader = accelerator.prepare(train_loader, val_loader)
 
         self.dataset_sizes = {
             "train": train_dataset.__len__(),

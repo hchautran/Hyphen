@@ -16,8 +16,10 @@ from utils.dataset import FakeNewsDataset
 from utils.utils import get_evaluation
 import wandb
 from transformers import AutoTokenizer
+from accelerate import Accelerator
 import os
 
+accelerator = Accelerator()
 DATA_PATH = os.getcwd() 
 
 class HyphenModel:
@@ -49,9 +51,7 @@ class HyphenModel:
         self.sentence_comment_co_model = None
         self.tokenizer = None
         self.metrics = Metrics()
-        self.device = (
-            torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
-        )
+        self.device = accelerator.device
         self.manifold = manifold
         self.lr = lr
         self.content_module = content_module
@@ -62,10 +62,12 @@ class HyphenModel:
         if self.log_enable:
             wandb.init(
                 project='Hyphen',
-                name=f'{platform}_{manifold}',
+                name=f'{platform}_{manifold}_{"gcn" if not use_gat else "gat"}',
                 config={
                     'dataset': platform,
-                    'type': manifold
+                    'type': manifold,
+                    'use gat': use_gat,
+                    'model': 'hyphen',
                 }
             )
             
@@ -144,9 +146,10 @@ class HyphenModel:
         )
         print("Hyphen built")
 
-        model = model.to(self.device)
+        model = accelerator.prepare(model) 
 
         self.optimizer = RiemannianAdam(model.parameters(), lr=self.lr)
+        self.optimizer = accelerator.prepare(self.optimizer)
 
         self.criterion = nn.CrossEntropyLoss()
       
@@ -241,6 +244,7 @@ class HyphenModel:
             shuffle=True,
             drop_last=True,
         )
+        train_loader, val_loader = accelerator.prepare(train_loader, val_loader)
 
         self.dataset_sizes = {
             "train": train_dataset.__len__(),
@@ -264,9 +268,9 @@ class HyphenModel:
             num_sample = len(label)  # last batch size
             total_samples += num_sample
 
-            comment = comment.to(self.device)
-            content = content.to(self.device)
-            label = label.to(self.device)
+            # comment = comment.to(self.device)
+            # content = content.to(self.device)
+            # label = label.to(self.device)
 
             self.model.content_encoder._init_hidden_state(num_sample)
 
@@ -350,6 +354,7 @@ class HyphenModel:
             shuffle=True,
             drop_last=True,
         )
+        train_loader, val_loader = accelerator.prepare(train_loader, val_loader)
 
         self.dataset_sizes = {
             "train": train_dataset.__len__(),
@@ -387,9 +392,9 @@ class HyphenModel:
 
                 content, comment, label, subgraphs = sample
 
-                comment = comment.to(self.device)
-                content = content.to(self.device)
-                label = label.to(self.device)
+                # comment = comment.to(self.device)
+                # content = content.to(self.device)
+                # label = label.to(self.device)
                 self.model.content_encoder._init_hidden_state(len(label))
                 predictions = self.model(
                     content, comment, subgraphs
@@ -418,9 +423,9 @@ class HyphenModel:
                 num_sample = len(label)  # last batch size
                 total_samples += num_sample
 
-                comment = comment.to(self.device)
-                content = content.to(self.device)
-                label = label.to(self.device)
+                # comment = comment.to(self.device)
+                # content = content.to(self.device)
+                # label = label.to(self.device)
 
                 self.model.content_encoder._init_hidden_state(num_sample)
 
