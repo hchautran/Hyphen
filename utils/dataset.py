@@ -32,3 +32,4 @@ class FakeNewsDataset(Dataset):
 
     def __getitem__(self, index):
         return self.content[index], self.comment[index], self.labels[index], self.subgraphs[index]
+m
