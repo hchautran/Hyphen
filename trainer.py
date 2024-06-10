@@ -11,45 +11,70 @@ import tqdm
 import dgl
 from hyptorch.geoopt.optim import RiemannianAdam
 from utils.metrics import Metrics
-from lhyphen import Hyphen
+from model.model import  Model
 from utils.dataset import FakeNewsDataset
 from utils.utils import get_evaluation
 import wandb
 from transformers import AutoTokenizer
 from accelerate import Accelerator
+from model import (
+    EuclidS4Enc,
+    EuclidAMRComEnc,
+    EuclidCoAttention,
+    EuclidGRUPostEnc,
+    HybridAMRComEnc,
+    HybridGRUPostEnc,
+    HybridCoAttention,
+    LorentzCoAttention
+    
+)
+from const import *
 import os
 
 accelerator = Accelerator()
 DATA_PATH = os.getcwd() 
 
-class HyphenModel:
+class HyphenTrainer:
     def __init__(
         self,
-        platform,
-        max_sen_len,
-        max_com_len,
-        max_sents,
-        max_coms,
-        manifold,
         lr,
-        content_module,
-        comment_module,
-        fourier,
-        use_gat=False,
-        log_enable=False,
+        n_classes:int,
+        manifold:str,
+        content_module:nn.Module,
+        comment_module:nn.Module,
+        fourier:bool,
+        train_dataset:FakeNewsDataset,
+        val_dataset:FakeNewsDataset,
+        word_hidden_size, 
+        sent_hidden_size, 
+        max_sent_length, 
+        max_word_length, 
+        graph_hidden,
+        log_enable:bool=False,
+        batch_size:int=32,
+        curv=1.0,
+        max_sentence_count = 50, 
+        max_comment_count = 10, 
+        embedding_dim = 100, 
+        latent_dim = 100, 
+        graph_glove_dim = 100,
     ):
-        self.model = None
-        self.use_gat = use_gat
-        self.max_sen_len = max_sen_len
-        self.max_sents = max_sents
-        self.max_coms = max_coms
-        self.max_com_len = max_com_len
+        self.curv=curv
+        self.n_classes=n_classes
+        self.max_sents = max_sentence_count
+        self.max_coms = max_comment_count
+        self.embedding_dim=embedding_dim
+        self.latent_dim= latent_dim 
+        self.graph_glove_dim = graph_glove_dim 
+        self.latent_dim = latent_dim
+        self.word_hidden_size = word_hidden_size
+        self.sent_hidden_size = sent_hidden_size
+        self.max_sent_length = max_sent_length
+        self.max_word_length = max_word_length
+        self.graph_hidden = graph_hidden
+        self.batch_size = batch_size
+
         self.vocab_size = 0
-        self.word_embedding = None
-        self.model = None
-        self.word_attention_model = None
-        self.sentence_comment_co_model = None
-        self.tokenizer = None
         self.metrics = Metrics()
         self.device = accelerator.device
         self.manifold = manifold
@@ -57,47 +82,113 @@ class HyphenModel:
         self.content_module = content_module
         self.comment_module = comment_module
         self.fourier = fourier
-        self.platform = platform
+        self.platform = train_dataset.name 
         self.log_enable = log_enable 
+        self.train_dataset = train_dataset
         if self.log_enable:
             wandb.init(
-                project='Hyphen',
-                name=f'{platform}_{manifold}_{"gcn" if not use_gat else "gat"}',
+                project='SSM4CTC',
+                name=f'{self.platform}_{manifold}',
                 config={
-                    'dataset': platform,
-                    'type': manifold,
-                    'use gat': use_gat,
-                    'model': 'hyphen',
+                    'dataset': self.platform,
+                    'manifold': manifold,
                 }
             )
+            wandb.watch(self.model, log='all')
+        
+        self.tokenizer = pickle.load(open("tokenizer.pkl", "rb"))
+        train_loader, val_loader = accelerator.prepare(train_loader, val_loader)
+        self.tokenizer = AutoTokenizer.from_pretrained('bert-base-uncased')
+        self.train_dataset = train_dataset,
+        self.val_dataset = val_dataset,
+        self.train_loader = DataLoader(
+            train_dataset,
+            batch_size=batch_size,
+            collate_fn=train_dataset.collate_fn,
+            shuffle=True,
+            drop_last=True,
+        )
+        self.val_loader = DataLoader(
+            val_dataset,
+            batch_size=batch_size,
+            collate_fn=val_dataset.collate_fn,
+            shuffle=True,
+            drop_last=True,
+        )
+
+        print("Building model....")
+        self.model = self._build_model()
+        model = accelerator.prepare(model) 
+        self.optimizer = RiemannianAdam(model.parameters(), lr=self.lr)
+        self.criterion = nn.CrossEntropyLoss()
+
+        self.train_loader, self.val_loader = accelerator.prepare(
+            self.train_loader, self.val_loader, self.optimizer
+        )
             
 
     def log(self, stats):
         if self.log_enable:
             wandb.log(stats)
-            
-
-    def _fit_on_texts(self, train_x, val_x):
-        """
-        Creates vocabulary set from the news content and the comments
-        """
-        texts = []
-        texts.extend(train_x)
-        texts.extend(val_x)
-        self.tokenizer = AutoTokenizer.from_pretrained('bert-base-uncased')
-        self.vocab_size = self.tokenizer.vocab_size
-        print("saved tokenizer")
 
 
+    def _build_comment_module(self, manifold:str)->nn.Module:
+        if manifold ==  LORENTZ:
+            pass
+        elif manifold == POINCARE: 
+            return HybridAMRComEnc(
+                in_dim=self.graph_glove_dim,
+                hidden_dim=self.graph_hidden,
+                max_comment_count=self.max_coms,
+                curv=self.curv
+            ) 
+        else:
+            return HybridAMRComEnc(
+                in_dim=self.graph_glove_dim,
+                hidden_dim=self.graph_hidden,
+                max_comment_count=self.max_coms,
+                curv=self.curv
+            ) 
 
-    def _build_model(self, n_classes=2, batch_size=12, embedding_dim=100):
+    def _build_post_module(self)->nn.Module:
+        if self.manifold == LORENTZ:
+            pass 
+        elif self.manifold == POINCARE: 
+            return HybridGRUPostEnc(
+                word_hidden_size=self.word_hidden_size,
+                sent_hidden_size=self.sent_hidden_size,
+                batch_size=self.batch_size
+
+            ) 
+        else:
+            return  
+
+    def _build_coattention_module(self)->nn.Module:
+        if self.manifold == LORENTZ:
+            return LorentzCoAttention(
+                latent_dim=self.latent_dim,
+                embedding_dim=self.embedding_dim,
+                embedding_dim=self.embedding_dim,
+            )
+        elif self.manifold == POINCARE: 
+            return 
+        else:
+            return 
+
+    def _build_fc(self)->nn.Module:
+        if self.manifold == LORENTZ:
+            pass
+        elif self.manifold == POINCARE: 
+            pass
+        else:
+            pass
+
+    def _build_model(self) :
         """
         This function is used to build Hyphen model.
         """
         embeddings_index = {}
-
         self.glove_dir = f"{DATA_PATH}/glove.twitter.27B.100d.txt"
-
         f = open(self.glove_dir, encoding="utf-8")
 
         for line in f:
@@ -108,10 +199,8 @@ class HyphenModel:
             
 
         f.close()
-
-        # get word index
         word_index = self.tokenizer.vocab
-        embedding_matrix = np.random.random((len(word_index) + 1, embedding_dim))
+        embedding_matrix = np.random.random((len(word_index) + 1, self.embedding_dim))
 
         # create embedding matrix.
         for word, i in word_index.items():
@@ -119,139 +208,37 @@ class HyphenModel:
             if embedding_vector is not None:
                 embedding_matrix[i] = embedding_vector
 
-        (
-            self.word_hidden_size,
-            self.sent_hidden_size,
-            self.max_sent_length,
-            self.max_word_length,
-            self.graph_hidden,
-        ) = (50, 50, 50, 50, 100)
-        model = Hyphen(
-            embedding_matrix,
-            self.word_hidden_size,
-            self.sent_hidden_size,
-            self.max_sent_length,
-            self.max_word_length,
-            self.device,
+
+        model = Model(
+            embedding_matrix=embedding_matrix,
+            word_hidden_size=self.word_hidden_size,
+            sent_hidden_size=self.sent_hidden_size,
+            max_sent_length=self.max_sent_length,
+            max_word_length=self.max_word_length,
             graph_hidden=self.graph_hidden,
-            batch_size=batch_size,
-            num_classes=n_classes,
+            batch_size=self.batch_size,
+            num_classes=self.n_classes,
             max_comment_count=self.max_coms,
             max_sentence_count=self.max_sents,
             manifold=self.manifold,
             comment_module=self.comment_module,
             content_module=self.content_module,
-            fourier=self.fourier,
-            use_gat=self.use_gat
         )
-        print("Hyphen built")
+        print("Model built")
 
-        model = accelerator.prepare(model) 
 
-        self.optimizer = RiemannianAdam(model.parameters(), lr=self.lr)
-        self.optimizer = accelerator.prepare(self.optimizer)
-
-        self.criterion = nn.CrossEntropyLoss()
-      
         return model
 
-    def _encode_texts(self, texts):
-        """
-        Pre process the news content sentences to equal length for feeding to GRU
-        :param texts:
-        :return:
-        """
-        encoded_texts = np.zeros((len(texts), self.max_sents, self.max_sen_len), dtype='int32')
-        for i, text in enumerate(texts):
-            # ids = [item.ids for item in self.tokenizer.encode_batch(text)]
-            ids = self.tokenizer(text, return_tensors='np', padding=True, truncation=True, max_length=self.max_sen_len)['input_ids']
-            encoded_text = np.array(
-                torch.nn.functional.pad(
-                    torch.from_numpy(ids),
-                    pad=(0, self.max_sen_len - torch.tensor(ids).shape[1]), 
-                    mode='constant', 
-                    value=0
-                )
-            )[:self.max_sents]
-            
-            encoded_texts[i][:len(encoded_text)] = encoded_text
-
-        return encoded_texts
 
 
     def test(
         self,
-        train_x,
-        train_y,
-        train_c,
-        val_c,
-        val_x,
-        val_y,
-        sub_train,
-        sub_val,
-        batch_size=9,
     ):
-        self.tokenizer = pickle.load(open("tokenizer.pkl", "rb"))
-        print("Building model....")
-        self.model = self._build_model(
-            n_classes=train_y.shape[-1], batch_size=batch_size, embedding_dim=100
-        )
-        if self.log_enable:
-            wandb.watch(self.model, log='all')
-
-        print("Model built.")
-
-        print("Encoding texts....")
-        # Create encoded input for content and comments
-        encoded_train_x = self._encode_texts(train_x)
-        encoded_val_x = self._encode_texts(val_x)
-        print("preparing dataset....")
-
-        # adding self loops in the dgl graphs
-        train_c = [dgl.add_self_loop(i) for i in train_c]
-        val_c = [dgl.add_self_loop(i) for i in val_c]
-
-        train_dataset = FakeNewsDataset(
-            encoded_train_x,
-            train_c,
-            train_y,
-            sub_train,
-            self.glove_dir,
-            self.max_sent_length,
-            self.max_word_length,
-        )
-        val_dataset = FakeNewsDataset(
-            encoded_val_x,
-            val_c,
-            val_y,
-            sub_val,
-            self.glove_dir,
-            self.max_sent_length,
-            self.max_word_length,
-        )
-
-        train_loader = DataLoader(
-            train_dataset,
-            batch_size=batch_size,
-            collate_fn=train_dataset.collate_fn,
-            shuffle=True,
-            drop_last=True,
-        )
-        val_loader = DataLoader(
-            val_dataset,
-            batch_size=batch_size,
-            collate_fn=val_dataset.collate_fn,
-            shuffle=True,
-            drop_last=True,
-        )
-        train_loader, val_loader = accelerator.prepare(train_loader, val_loader)
 
         self.dataset_sizes = {
-            "train": train_dataset.__len__(),
-            "val": val_dataset.__len__(),
+            "train": self.train_dataset.__len__(),
+            "val": self.val_dataset.__len__(),
         }
-        self.dataloaders = {"train": train_loader, "val": val_loader}
-        print("Dataset prepared.")
 
         self.model.load_state_dict(
             torch.load(f"saved_models/{self.platform}/best_model_{self.manifold}.pt")
@@ -263,14 +250,11 @@ class HyphenModel:
         loss_ls = []
         total_samples = 0
         As_batch, Ac_batch, predictions_batch = [], [], []
-        for i, sample in enumerate(self.dataloaders["val"]):
+        for i, sample in enumerate(self.val_loader):
             content, comment, label, subgraphs = sample
             num_sample = len(label)  # last batch size
             total_samples += num_sample
 
-            # comment = comment.to(self.device)
-            # content = content.to(self.device)
-            # label = label.to(self.device)
 
             self.model.content_encoder._init_hidden_state(num_sample)
 
@@ -289,81 +273,11 @@ class HyphenModel:
 
     def train(
         self,
-        train_x,
-        train_y,
-        train_c,
-        val_c,
-        val_x,
-        val_y,
-        sub_train,
-        sub_val,
-        batch_size=9,
         epochs=5,
     ):
 
-        # Fit the vocabulary set on the content and comments
-        self._fit_on_texts(train_x, val_x)
+   
 
-        print("Building model....")
-        self.model = self._build_model(
-            n_classes=train_y.shape[-1], batch_size=batch_size, embedding_dim=100
-        )
-        print("Model built.")
-
-        print("Encoding texts....")
-        # Create encoded input for content and comments
-        encoded_train_x = self._encode_texts(train_x)
-        # print(encoded_train_x.shape)
-        encoded_val_x = self._encode_texts(val_x)
-        print("preparing dataset....")
-
-        # adding self loops in the dgl graphs
-        train_c = [dgl.add_self_loop(i) for i in train_c]
-        val_c = [dgl.add_self_loop(i) for i in val_c]
-
-        train_dataset = FakeNewsDataset(
-            encoded_train_x,
-            train_c,
-            train_y,
-            sub_train,
-            self.glove_dir,
-            self.max_sent_length,
-            self.max_word_length,
-        )
-        val_dataset = FakeNewsDataset(
-            encoded_val_x,
-            val_c,
-            val_y,
-            sub_val,
-            self.glove_dir,
-            self.max_sent_length,
-            self.max_word_length,
-        )
-
-        train_loader = DataLoader(
-            train_dataset,
-            batch_size=batch_size,
-            collate_fn=train_dataset.collate_fn,
-            shuffle=True,
-            drop_last=True,
-        )
-        val_loader = DataLoader(
-            val_dataset,
-            batch_size=batch_size,
-            collate_fn=val_dataset.collate_fn,
-            shuffle=True,
-            drop_last=True,
-        )
-        train_loader, val_loader = accelerator.prepare(train_loader, val_loader)
-
-        self.dataset_sizes = {
-            "train": train_dataset.__len__(),
-            "val": val_dataset.__len__(),
-        }
-        self.dataloaders = {"train": train_loader, "val": val_loader}
-        print("Dataset prepared.")
-
-        # train model for given epoch
         self.run_epoch(epochs)
 
         
@@ -371,14 +285,8 @@ class HyphenModel:
         """
         Function to train model for given epochs
         """
-
-        since = time.time()
-        clip = 5  # modify clip
-
         best_f1 = 0.0
-        best_precision = 0.0
-        best_recall = 0.0
-        best_acc = 0.0
+
 
         for epoch in range(epochs):
             print("Epoch {}/{}".format(epoch, epochs - 1))
@@ -386,15 +294,12 @@ class HyphenModel:
             self.metrics.on_train_begin()
             self.model.train()
 
-            num_iter_per_epoch = len(self.dataloaders["train"])
-            for iter, sample in enumerate(tqdm.tqdm(self.dataloaders["train"])):
+            num_iter_per_epoch = len(self.train_loader)
+            for iter, sample in enumerate(tqdm.tqdm(self.train_loader)):
                 self.optimizer.zero_grad()
 
-                content, comment, label, subgraphs = sample
+                content, _, comment, label, subgraphs = sample
 
-                # comment = comment.to(self.device)
-                # content = content.to(self.device)
-                # label = label.to(self.device)
                 self.model.content_encoder._init_hidden_state(len(label))
                 predictions = self.model(
                     content, comment, subgraphs
@@ -418,17 +323,11 @@ class HyphenModel:
             self.model.eval()
             loss_ls = []
             total_samples = 0
-            for i, sample in enumerate(self.dataloaders["val"]):
-                content, comment, label, subgraphs = sample
+            for i, sample in enumerate(self.val_loader):
+                content, _ ,comment, label, subgraphs = sample
                 num_sample = len(label)  # last batch size
                 total_samples += num_sample
-
-                # comment = comment.to(self.device)
-                # content = content.to(self.device)
-                # label = label.to(self.device)
-
                 self.model.content_encoder._init_hidden_state(num_sample)
-
                 predictions = self.model(content, comment, subgraphs)
 
                 te_loss = self.criterion(predictions, label)
@@ -439,28 +338,28 @@ class HyphenModel:
 
                 predictions = predictions.detach().cpu().numpy()
                 label = label.detach().cpu().numpy()
-
                 self.metrics.on_batch_end(epoch, i, predictions, label)
 
-            acc_, f1 = self.metrics.on_epoch_end(epoch)
+            acc, f1, precision, recall = self.metrics.on_epoch_end(epoch)
             if f1 > best_f1:
                 print(f"Best F1: {f1}")
                 print("Saving best model!")
-                self.log({'best F1': f1})
+                self.log({'epoch':epoch, 'best F1': f1, 'best precision': predictions, 'best recall': recall})
                 dst_dir = f"saved_models/{self.platform}/"
                 os.makedirs(dst_dir, exist_ok=True)
                 torch.save(
                     self.model.state_dict(), f"{dst_dir}best_model_{self.manifold}.pt"
                 )
-                best_model = self.model
                 best_f1 = f1
 
             te_loss = sum(loss_ls) / total_samples
             self.log({
                 "Test/epoch": epoch,
                 "Test/Loss": te_loss,
-                "Test/Accuracy": acc_,
+                "Test/Accuracy": acc,
                 "Test/F1": f1,
+                "Test/Precision": precision,
+                "Test/Recall": recall,
                 
             })
 

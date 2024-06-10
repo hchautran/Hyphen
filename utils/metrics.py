@@ -36,4 +36,4 @@ class Metrics():
         print("Epoch: %d - val_accuracy: % f - val_precision: % f - val_recall % f val_f1: %f " % (
             epoch, acc, precision, recall, f1))
         print('-' * 100)
-        return acc, f1
+        return acc, f1, precision, recall

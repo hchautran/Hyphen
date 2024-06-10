@@ -5,27 +5,11 @@ import pickle
 import argparse
 import pickle
 parser = argparse.ArgumentParser()
-from lcontroller import HyphenModel as LorentzModel
-from pcontroller import HyphenModel as PoincareModel
-from hyphatcontroller import HyphatModel 
-from SSR import SSRModel 
+from trainer import Trainer 
+from utils.dataset import FakeNewsDataset
+import dgl
+from const import *
 
-
-HYPHEN='hyphen'
-HYPHAT='hyphat'
-SSR='ssr'
-LORENTZ = 'lorentz'
-POINCARE = 'poincare'
-EUCLID = 'euclid'
-POLITIFACT = 'politifact'
-ANTIVAX= 'antivax'
-GOSSIPCOP = 'gossipcop'
-FIGLANG_TWITTER = 'figlang_twitter'
-FIGLANG_REDDIT = 'figlang_reddit'
-RUMOUREVAL = 'rumoureval'
-TWITTER15 = 'twitter15'
-TWITTER16 = 'twitter16'
-PHEME = 'pheme'
 
 parser.add_argument('--manifold', choices=[POINCARE, EUCLID, LORENTZ], default = 'PoincareBall', help='Choose the underlying manifold for Hyphen')
 parser.add_argument('--no-fourier', default=True, action='store_false', help='If you want to remove the Fourier sublayer from Hyphen\'s co-attention module.')
@@ -43,7 +27,6 @@ parser.add_argument('--epochs', type = int, default= 5, help='The number of epoc
 parser.add_argument('--use_gat', default=False, action='store_true', help='use graph attention network')
 parser.add_argument('--enable-log', default=False, action='store_true', help='use graph attention network')
 parser.add_argument('--model', default=HYPHEN)
-
 args = parser.parse_args()
 
 file = open(f'data/{args.dataset}/{args.dataset}_preprocessed.pkl', 'rb')
@@ -54,70 +37,43 @@ id_train, id_test = props['train']['id'], props['val']['id']
 x_train, x_val = props['train']['x'], props['val']['x']
 y_train, y_val = props['train']['y'], props['val']['y']
 c_train, c_val = props['train']['c'], props['val']['c']
-raw_c_train, raw_c_test = df[df['id'].isin(id_train)], props['val']['c'] 
+raw_c_train, raw_c_val = list(df[df['id'].isin(id_train)]['comments']), list(df[df['id'].isin(id_test)]['comments'])
 sub_train, sub_val = props['train']['subgraphs'], props['val']['subgraphs']
 
 
-if args.model.lower() == HYPHEN:
-    if args.manifold.lower() != LORENTZ:
-        model = PoincareModel(
-            args.dataset, 
-            args.max_sent_len, 
-            args.max_com_len, 
-            args.max_sents, 
-            args.max_coms, 
-            manifold= args.manifold, 
-            lr = args.lr, 
-            comment_module=args.no_comment, 
-            content_module=args.no_content, 
-            fourier = args.no_fourier,
-            log_enable=args.enable_log
-        )
-    else:
-        model = LorentzModel(
-            args.dataset, 
-            args.max_sent_len, 
-            args.max_com_len, 
-            args.max_sents, 
-            args.max_coms, 
-            manifold= args.manifold, 
-            lr = args.lr, 
-            comment_module=args.no_comment, 
-            content_module=args.no_content, 
-            fourier = args.no_fourier,
-            use_gat=args.use_gat,
-            log_enable=args.enable_log
-        )
-elif args.model.lower() == HYPHAT:
-    model = HyphatModel(
-        args.dataset, 
-        args.max_sent_len, 
-        args.max_com_len, 
-        args.max_sents, 
-        args.max_coms, 
-        manifold= args.manifold, 
-        lr = args.lr, 
-        comment_module=args.no_comment, 
-        content_module=args.no_content, 
-        fourier = args.no_fourier,
-        use_gat=args.use_gat,
-        log_enable=args.enable_log
-    )
-else:
-    model = SSRModel(
-        args.dataset, 
-        args.max_sent_len, 
-        args.max_com_len, 
-        args.max_sents, 
-        args.max_coms, 
-        manifold= args.manifold, 
-        lr = args.lr, 
-        comment_module=args.no_comment, 
-        content_module=args.no_content, 
-        fourier = args.no_fourier,
-        use_gat=args.use_gat,
-        log_enable=args.enable_log
-    )
+c_train = [dgl.add_self_loop(i) for i in c_train]
+c_val = [dgl.add_self_loop(i) for i in c_val]
+print("Building model....")
 
-model.train(x_train, y_train, c_train, c_val, x_val, y_val, sub_train, sub_val, batch_size=args.batch_size, epochs=args.epochs)
+print("Model built.")
 
+print("Encoding texts....")
+# Create encoded input for content and comments
+
+print("preparing dataset....")
+train_dataset = FakeNewsDataset(
+    x_train,
+    c_train,
+    y_train,
+    sub_train,
+    args.max_com_length,
+    args.max_sent_length,
+
+)
+val_dataset = FakeNewsDataset(
+    x_val,
+    c_val,
+    y_val,
+    sub_val,
+    args.max_com_length,
+    args.max_sent_length,
+)
+
+
+trainer = Trainer(
+    n_classes=train_dataset.num_classes,
+    max_com_len=args.max_com_length,
+    max_com_len=args.max_com_length,
+    batch_size=args.batch_size
+)
+trainer.train(epochs=args.epochs)
