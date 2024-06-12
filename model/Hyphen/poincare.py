@@ -113,6 +113,6 @@ class Hyphen(nn.Module):
             preds = torch.nan_to_num(preds, nan = 0.0)
 
         assert not torch.isnan(preds).any(), "preds is nan"
-        return preds, As, Ac, content_embedding, comment_embedding
+        return preds, As, Ac
         #only comment module is on
      

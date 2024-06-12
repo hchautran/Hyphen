@@ -23,6 +23,7 @@ from hyptorch.lorentz.manifold import CustomLorentz
 class Trainer:
     def __init__(
         self,
+        model_type,
         platform,
         max_sen_len,
         max_com_len,

@@ -6,9 +6,10 @@ parser = argparse.ArgumentParser()
 from LorentzTrainer import Trainer as LorentzTrainer
 from PoincareTrainer import Trainer as PoincareTrainer
 from dgl import heterograph
-from const import DATA_PATH
+from const import * 
+import pandas as pd
 
-parser.add_argument('--manifold', choices=['PoincareBall', 'Euclidean', 'Lorentz'], default = 'PoincareBall', help='Choose the underlying manifold for Hyphen')
+parser.add_argument('--manifold', choices=[EUCLID, LORENTZ, POINCARE], default = POINCARE, help='Choose the underlying manifold for Hyphen')
 parser.add_argument('--no-fourier', default=True, action='store_false', help='If you want to remove the Fourier sublayer from Hyphen\'s co-attention module.')
 parser.add_argument('--no-comment', default=True, action='store_false', help='If you want to remove the comment module from Hyphen i.e. just consider news content as the only input modality.')
 parser.add_argument('--no-content', default=True, action='store_false', help='If you want to remove the content module from Hyphen, i.e. just consider user comments as the only input modality.')
@@ -21,13 +22,18 @@ parser.add_argument('--max-com-len', type = int, default= 10, help='Specify the 
 parser.add_argument('--max-sent-len', type = int, default = 10, help='Specify the maximum length of a news sentence.')
 parser.add_argument('--batch-size', type = int,  default = 32,  help='Specify the batch size of the dataset.')
 parser.add_argument('--epochs', type = int, default= 5, help='The number of epochs to train Hyphen.')
+parser.add_argument('--model', type = str, default= HYPHEN, help='model type')
 
 args = parser.parse_args()
 
 file = open(f'{DATA_PATH}/data/{args.dataset}/{args.dataset}_preprocessed.pkl', 'rb')
+df = pd.read_csv(f'data/{args.dataset}/{args.dataset}.csv') 
 props = pickle.load(file)
 
 id_train, id_test = props['train']['id'], props['val']['id']
+raw_c_train, raw_c_val = list(df[df['id'].isin(id_train)]['comments']), list(df[df['id'].isin(id_test)]['comments'])
+raw_c_train = [c.split('::') if isinstance(c, str) else '' for c in raw_c_train]
+raw_c_val= [c.split('::') if isinstance(c, str) else '' for c in raw_c_val]
 x_train, x_val = props['train']['x'], props['val']['x']
 # print(x_train)
 # print('-'*100)
@@ -41,13 +47,14 @@ sub_train, sub_val = props['train']['subgraphs'], props['val']['subgraphs']
 # print(sub_train)
 
 
-if args.manifold != 'Lorentz':
+if args.manifold.lower() != 'lorentz':
     hyphen = PoincareTrainer(
-        args.dataset, 
-        args.max_sent_len, 
-        args.max_com_len, 
-        args.max_sents, 
-        args.max_coms, 
+        model_type=args.model,
+        platform=args.dataset, 
+        max_sen_len=args.max_sent_len, 
+        max_com_len=args.max_com_len, 
+        max_sents=args.max_sents, 
+        max_coms=args.max_coms, 
         lr = args.lr, 
         comment_module=args.no_comment, 
         content_module=args.no_content, 
@@ -56,15 +63,29 @@ if args.manifold != 'Lorentz':
     )
 else:
     hyphen = LorentzTrainer(
-        args.dataset, 
-        args.max_sent_len, 
-        args.max_com_len, 
-        args.max_sents, 
-        args.max_coms, 
+        model_type=args.model,
+        platform=args.dataset, 
+        max_sent_len=args.max_sent_len, 
+        max_com_len=args.max_com_len, 
+        max_sents=args.max_sents, 
+        max_coms=args.max_coms, 
         lr = args.lr, 
         comment_module=args.no_comment, 
         content_module=args.no_content, 
         fourier = args.no_fourier
     )
 
-hyphen.train(x_train, y_train, c_train, c_val, x_val, y_val, sub_train, sub_val, batch_size=args.batch_size, epochs=args.epochs)
+hyphen.train(
+    train_x=x_train, 
+    train_y=y_train, 
+    train_c=c_train, 
+    train_raw_c=raw_c_train, 
+    val_x=x_val, 
+    val_y=y_val, 
+    val_c=c_val, 
+    val_raw_c=raw_c_val, 
+    sub_train=sub_train, 
+    sub_val=sub_val, 
+    batch_size=args.batch_size, 
+    epochs=args.epochs
+)

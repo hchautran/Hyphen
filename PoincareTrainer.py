@@ -12,18 +12,21 @@ import dgl
 from hyptorch.geoopt.optim.radam import RiemannianAdam
 from model.utils.metrics import Metrics
 from model.Hyphen.poincare import Hyphen
+from model.ssm.s4d import SSM4RC 
 from model.utils.dataset import FakeNewsDataset
 from model.utils.utils import get_evaluation
 import wandb
 from tokenizers import Tokenizer, models, normalizers, pre_tokenizers, decoders, trainers
 from transformers import AutoTokenizer
-from const import DATA_PATH
+from const import * 
 from hyptorch.geoopt import PoincareBall
+from accelerate import Accelerator
 
-
+accelerator = Accelerator()
 class Trainer:
     def __init__(
         self,
+        model_type,
         platform,
         max_sen_len,
         max_com_len,
@@ -35,6 +38,7 @@ class Trainer:
         fourier,
         curv=1.0,
     ):
+        self.model_type = model_type
         self.model = None
         self.max_sen_len = max_sen_len
         self.max_sents = max_sents
@@ -47,9 +51,7 @@ class Trainer:
         self.sentence_comment_co_model = None
         self.tokenizer = None
         self.metrics = Metrics()
-        self.device = (
-            torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
-        )
+        self.device = accelerator.device 
         self.manifold = PoincareBall(c=curv)
         self.lr = lr
         self.content_module = content_module
@@ -60,11 +62,11 @@ class Trainer:
         self.log_enable = False 
         if self.log_enable:
             wandb.init(
-                project='Hyphen',
-                name=f'{platform}_{self.manifold.__class__}',
+                project='SSM4RC',
+                name=f'{platform}_poincare',
                 config={
                     'dataset': platform,
-                    'type': self.manifold.__class__ 
+                    'type': self.model_type 
                 }
             )
 
@@ -77,26 +79,28 @@ class Trainer:
         """
         Creates vocabulary set from the news content and the comments
         """
-        texts = []
-        texts.extend(train_x)
-        texts.extend(val_x)
-        tokenizer = Tokenizer(models.WordLevel())
-        tokenizer.normalizer = normalizers.NFKC()
-        tokenizer.pre_tokenizer = pre_tokenizers.Whitespace()
-        # tokenizer.decoder = decoders.ByteLevel()
-        trainer = trainers.WordLevelTrainer(
-            vocab_size=500000,
-            initial_alphabet=pre_tokenizers.ByteLevel.alphabet(),
-            special_tokens=["<PAD>", "<BOS>", "<EOS>"],
-        )
-        all_sentences = []
-        for text in texts:
-            for sentence in text:
-                all_sentences.append(sentence)
-        print(len(all_sentences))
+        # texts = []
+        # texts.extend(train_x)
+        # texts.extend(val_x)
+        # tokenizer = Tokenizer(models.WordLevel( unk_token="[UNK]"))
+        # tokenizer.normalizer = normalizers.NFKC()
+        # tokenizer.pre_tokenizer = pre_tokenizers.Whitespace()
+        # # tokenizer.decoder = decoders.ByteLevel()
+        # trainer = trainers.WordLevelTrainer(
+        #     vocab_size=500000,
+        #     initial_alphabet=pre_tokenizers.ByteLevel.alphabet(),
+        #     special_tokens=["<PAD>", "<BOS>", "<EOS>", "[UNK]"],
+        # )
+        # all_sentences = []
+        # for text in texts:
+        #     for sentence in text:
+        #         all_sentences.append(sentence)
+        # print(len(all_sentences))
 
-        tokenizer.train_from_iterator(all_sentences, trainer=trainer)
-        self.tokenizer = tokenizer 
+        # tokenizer.train_from_iterator(all_sentences, trainer=trainer)
+        # self.tokenizer = tokenizer 
+
+        self.tokenizer = AutoTokenizer.from_pretrained('bert-base-uncased')
         print("saved tokenizer")
 
 
@@ -122,7 +126,7 @@ class Trainer:
         f.close()
 
         # get word index
-        word_index = self.tokenizer.get_vocab()
+        word_index = self.tokenizer.vocab
         embedding_matrix = np.random.random((len(word_index) + 1, embedding_dim))
 
         # create embedding matrix.
@@ -138,29 +142,84 @@ class Trainer:
             self.max_word_length,
             self.graph_hidden,
         ) = (50, 50, 50, 50, 100)
-        model = Hyphen(
-            manifold=self.manifold,
-            embedding_matrix=embedding_matrix,
-            word_hidden_size=self.word_hidden_size,
-            sent_hidden_size=self.sent_hidden_size,
-            max_sent_length=self.max_sent_length,
-            max_word_length=self.max_word_length,
-            device=self.device,
-            graph_hidden=self.graph_hidden,
-            batch_size=batch_size,
-            num_classes=n_classes,
-            max_comment_count=self.max_coms,
-            max_sentence_count=self.max_sents,
-            comment_module=self.comment_module,
-            content_module=self.content_module,
-            fourier=self.fourier,
-        )
-        print("Hyphen built")
-        model = model.to(self.device)
-        self.optimizer = RiemannianAdam(model.parameters(), lr=self.lr)
+        if self.model_type == HYPHEN:
+            model = Hyphen(
+                manifold=self.manifold,
+                embedding_matrix=embedding_matrix,
+                word_hidden_size=self.word_hidden_size,
+                sent_hidden_size=self.sent_hidden_size,
+                max_sent_length=self.max_sent_length,
+                max_word_length=self.max_word_length,
+                device=self.device,
+                graph_hidden=self.graph_hidden,
+                batch_size=batch_size,
+                num_classes=n_classes,
+                max_comment_count=self.max_coms,
+                max_sentence_count=self.max_sents,
+                comment_module=self.comment_module,
+                content_module=self.content_module,
+                fourier=self.fourier,
+            )
+            self.optimizer = RiemannianAdam(model.parameters(), lr=self.lr)
+        else:
+            model = SSM4RC(
+                manifold=self.manifold,
+                embedding_matrix=embedding_matrix,
+                word_hidden_size=self.word_hidden_size,
+                sent_hidden_size=self.sent_hidden_size,
+                max_sent_length=self.max_sent_length,
+                max_word_length=self.max_word_length,
+                device=self.device,
+                graph_hidden=self.graph_hidden,
+                batch_size=batch_size,
+                num_classes=n_classes,
+                max_comment_count=self.max_coms,
+                max_sentence_count=self.max_sents,
+                comment_module=self.comment_module,
+                content_module=self.content_module,
+                fourier=self.fourier,
+            )
+            self.optimizer = RiemannianAdam(model.parameters(), lr=self.lr)
+            
+        print(f"{self.model_type} built")
+        model = accelerator.prepare(model) 
+
+        self.optimizer = accelerator.prepare(self.optimizer)
         self.criterion = nn.CrossEntropyLoss()
 
         return model
+
+    # def _encode_texts(self, texts):
+    #     """
+    #     Pre process the news content sentences to equal length for feeding to GRU
+    #     :param texts:
+    #     :return:
+    #     """
+    #     encoded_texts = np.zeros((len(texts), self.max_sents, self.max_sen_len), dtype='int32')
+    #     for i, text in enumerate(texts):
+    #         # ids = [item.ids for item in self.tokenizer.encode_batch(text)]
+    #         # print(text)
+    #         # print('='*50)
+    #         if isinstance(text, str): continue 
+    #         sents = self.tokenizer.encode_batch(text)
+    #         encoded_sents = []
+    #         for sent in sents:
+    #             encoded_sent = np.array(torch.nn.functional.pad(
+    #                 torch.tensor(sent.ids)[np.newaxis, ...],
+    #                 pad=(0, self.max_sen_len - torch.tensor(sent.ids).shape[0]), 
+    #                 mode='constant', 
+    #                 value=0
+    #             ))[:self.max_sents]
+    #             # print(encoded_sent)
+    #             encoded_sents.append(encoded_sent)
+
+    #         encoded_sents = np.concatenate(encoded_sents, axis=0)
+    #         # print(encoded_sents)
+            
+    #         encoded_texts[i][:len(encoded_sents)] = encoded_sents
+            
+
+    #     return encoded_texts
 
     def _encode_texts(self, texts):
         """
@@ -171,24 +230,17 @@ class Trainer:
         encoded_texts = np.zeros((len(texts), self.max_sents, self.max_sen_len), dtype='int32')
         for i, text in enumerate(texts):
             # ids = [item.ids for item in self.tokenizer.encode_batch(text)]
-            sents = self.tokenizer.encode_batch(text)
-            encoded_sents = []
-            for sent in sents:
-                encoded_sent = np.array(torch.nn.functional.pad(
-                    torch.tensor(sent.ids)[np.newaxis, ...],
-                    pad=(0, self.max_sen_len - torch.tensor(sent.ids).shape[0]), 
+            ids = self.tokenizer(text, return_tensors='np', padding=True, truncation=True, max_length=self.max_sen_len)['input_ids']
+            encoded_text = np.array(
+                torch.nn.functional.pad(
+                    torch.from_numpy(ids),
+                    pad=(0, self.max_sen_len - torch.tensor(ids).shape[1]), 
                     mode='constant', 
                     value=0
-                ))
-                # print(encoded_sent)
-                encoded_sents.append(encoded_sent)
-
-            encoded_sents = np.concatenate(encoded_sents, axis=0)
-            # print(encoded_sents)
+                )
+            )[:self.max_sents]
             
-            encoded_texts[i][:len(encoded_sents)] = encoded_sents
-            
-
+            encoded_texts[i][:len(encoded_text)] = encoded_text
         return encoded_texts
 
     def test(
@@ -298,11 +350,13 @@ class Trainer:
     def train(
         self,
         train_x,
+        train_raw_c,
         train_y,
         train_c,
         val_c,
-        val_x,
+        val_raw_c,
         val_y,
+        val_x,
         sub_train,
         sub_val,
         batch_size=9,
@@ -321,8 +375,9 @@ class Trainer:
         print("Encoding texts....")
         # Create encoded input for content and comments
         encoded_train_x = self._encode_texts(train_x)
-        print(encoded_train_x.shape)
         encoded_val_x = self._encode_texts(val_x)
+        encoded_train_c = self._encode_texts(train_raw_c)
+        encoded_val_c = self._encode_texts(val_raw_c)
         print("preparing dataset....")
 
         # adding self loops in the dgl graphs
@@ -331,19 +386,19 @@ class Trainer:
 
         train_dataset = FakeNewsDataset(
             encoded_train_x,
+            encoded_train_c,
             train_c,
             train_y,
             sub_train,
-            self.glove_dir,
             self.max_sent_length,
             self.max_word_length,
         )
         val_dataset = FakeNewsDataset(
             encoded_val_x,
+            encoded_val_c,
             val_c,
             val_y,
             sub_val,
-            self.glove_dir,
             self.max_sent_length,
             self.max_word_length,
         )
@@ -367,10 +422,10 @@ class Trainer:
             "train": train_dataset.__len__(),
             "val": val_dataset.__len__(),
         }
+        train_loader, val_loader = accelerator.prepare(train_loader, val_loader) 
         self.dataloaders = {"train": train_loader, "val": val_loader}
         print("Dataset prepared.")
-
-        # train model for given epoch
+        
         self.run_epoch(epochs)
 
         
@@ -397,20 +452,20 @@ class Trainer:
             for iter, sample in enumerate(tqdm.tqdm(self.dataloaders["train"])):
                 self.optimizer.zero_grad()
 
-                content, comment, label, subgraphs = sample
+                content, comment, comment_graph ,label, subgraphs = sample
 
-                comment = comment.to(self.device)
-                content = content.to(self.device)
-                label = label.to(self.device)
-                self.model.content_encoder._init_hidden_state(len(label))
-                predictions, As, Ac, content_embeddings, comment_embeddings = self.model(
-                    content, comment, subgraphs
-                )  # As and Ac are the attention weights we are returning
-                pred_loss = self.criterion(predictions, label)
-                hir_loss = self.model.hir_loss(comment_embeddings) 
-                loss = pred_loss + hir_loss 
-                print(f'hir loss:{hir_loss.item()},  pred_loss: {pred_loss.item()}')
-                loss.backward()
+
+                if self.model_type == HYPHEN:
+                    self.model.content_encoder._init_hidden_state(self.device, len(label))
+                    predictions,_,_ = self.model(
+                        content=content, comment_graph=comment_graph, subgraphs=subgraphs
+                    )
+                else:
+                    predictions,_,_ = self.model(
+                        content=content, comment=comment
+                    )  # As and Ac are the attention weights we are returning
+                loss = self.criterion(predictions, label)
+                accelerator.backward(loss)
                 self.optimizer.step()
 
                 training_metrics = get_evaluation(
@@ -428,18 +483,18 @@ class Trainer:
             loss_ls = []
             total_samples = 0
             for i, sample in enumerate(self.dataloaders["val"]):
-                content, comment, label, subgraphs = sample
+                content, comment, comment_graph,label, subgraphs = sample
                 num_sample = len(label)  # last batch size
                 total_samples += num_sample
-
-                comment = comment.to(self.device)
-                content = content.to(self.device)
-                label = label.to(self.device)
-
-                self.model.content_encoder._init_hidden_state(num_sample)
-
-                predictions, As, Ac,_,_ = self.model(content, comment, subgraphs)
-
+                if self.model_type == HYPHEN:
+                    self.model.content_encoder._init_hidden_state( self.device, num_sample)
+                    predictions,_,_ = self.model(
+                        content=content, comment_graph=comment_graph, subgraphs=subgraphs
+                    )  # As and Ac are the attention weights we are returning
+                else:
+                    predictions,_,_ = self.model(
+                        content=content, comment=comment 
+                    )  # As and Ac are the attention weights we are returning
                 te_loss = self.criterion(predictions, label)
                 loss_ls.append(te_loss * num_sample)
 
