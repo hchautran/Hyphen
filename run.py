@@ -5,7 +5,6 @@ import argparse
 parser = argparse.ArgumentParser()
 from LorentzTrainer import Trainer as LorentzTrainer
 from PoincareTrainer import Trainer as PoincareTrainer
-from dgl import heterograph
 from const import * 
 import pandas as pd
 
@@ -36,16 +35,9 @@ raw_c_train, raw_c_val = list(df[df['id'].isin(id_train)]['comments']), list(df[
 raw_c_train = [c.split('::') if isinstance(c, str) else '' for c in raw_c_train]
 raw_c_val= [c.split('::') if isinstance(c, str) else '' for c in raw_c_val]
 x_train, x_val = props['train']['x'], props['val']['x']
-# print(x_train)
-# print('-'*100)
 y_train, y_val = props['train']['y'], props['val']['y']
-# print(y_train)
-# print('-'*100)
 c_train, c_val = props['train']['c'], props['val']['c']
-# print(c_train)
-# print('-'*100)
 sub_train, sub_val = props['train']['subgraphs'], props['val']['subgraphs']
-# print(sub_train)
 
 
 if args.manifold.lower() != 'lorentz':

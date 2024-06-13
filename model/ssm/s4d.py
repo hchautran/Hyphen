@@ -9,7 +9,6 @@ import torch.nn as nn
 from ..coattention.poincare import CoAttention
 from ..utils.layers.hyp_layers import *
 from hyptorch.geoopt import PoincareBall 
-from hyptorch.poincare.layers import PMLR 
 from ..utils.utils import matrix_mul, element_wise_mul
 
 
@@ -197,7 +196,6 @@ class S4Model(nn.Module):
         x = x.transpose(-1, -2)  # (B, L, d_model) -> (B, d_model, L)
         for layer, norm, dropout in zip(self.s4_layers, self.norms, self.dropouts):
             # Each iteration of this loop will map (B, d_model, L) -> (B, d_model, L)
-
             z = x
             if self.prenorm:
                 # Prenorm
@@ -223,8 +221,7 @@ class S4Model(nn.Module):
         x = self.decoder(x)  #
 
         if pooling:
-            return x.mean(dim=1)
-
+            return  x.mean(dim=1)
 
         return x
 
@@ -244,19 +241,32 @@ class S4DEnc(nn.Module):
         self.sent_ssm= S4Model(d_input=sent_hidden_size, d_model=sent_hidden_size//2, d_output=sent_hidden_size, n_layers=1, prenorm=False, d_state=32, factor=2)
         self.word_weight = nn.Parameter(torch.Tensor(word_hidden_size, word_hidden_size))
         self.word_bias = nn.Parameter(torch.Tensor(1, word_hidden_size))
-        self.context_weight = nn.Parameter(torch.Tensor( sent_hidden_size, 1))
+        self.context_weight = nn.Parameter(torch.Tensor(word_hidden_size, 1))
         self.lookup = self.create_embeddeding_layer(embedding_matrix)
+        self._create_weights(mean=0.0, std=0.05)
+
+    def _create_weights(self, mean=0.0, std=0.05):
+        self.word_weight.data.normal_(mean, std)
+        self.context_weight.data.normal_(mean, std)
 
     def forward(self, input):
         output_list = []
         # input = input.permute(1, 0, 2)
         for x in input:
             x = self.lookup(x)
-            output= self.word_ssm(x=x, pooling=True) 
-          
-            output_list.append(output)
+            x = self.word_ssm(x=x, pooling=False) 
+            # print(x.shape)
+            output = matrix_mul(x, self.word_weight, self.word_bias)
+            # print('after word_weight',output.shape)
+            output = matrix_mul(output, self.context_weight).permute(1,0)[..., None]
+            output = F.softmax(output, dim=-1)
+            # print(output.shape)
+            x = (x.transpose(-1,-2) @ output).squeeze(-1)
+            output_list.append(x)
+
         output = torch.stack(output_list, dim=0)
         x = self.sent_ssm(output)
+
         clip_r = 2.0 
         x_norm = torch.norm(x, dim=-1, keepdim=True) + 1e-5
         fac = torch.minimum(torch.ones_like(x_norm), clip_r/ x_norm)
@@ -272,12 +282,6 @@ class S4DEnc(nn.Module):
         emb_layer.load_state_dict({'weight': weights_matrix})
         emb_layer.weight.requires_grad = trainable
         return emb_layer
-
-
-        
-
-
-
 
 
 class SSM4RC(nn.Module):
