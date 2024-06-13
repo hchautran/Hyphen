@@ -38,6 +38,7 @@ class Trainer:
         fourier,
         curv=1.0,
         enable_log=False,
+        embedding_dim=100
     ):
         self.model_type = model_type
         self.model = None
@@ -59,6 +60,7 @@ class Trainer:
         self.comment_module = comment_module
         self.fourier = fourier
         self.platform = platform
+        self.embedding_dim=embedding_dim 
      
         self.log_enable = enable_log 
         if self.log_enable:
@@ -106,13 +108,13 @@ class Trainer:
 
 
 
-    def _build_model(self, n_classes=2, batch_size=12, embedding_dim=100):
+    def _build_model(self, n_classes=2, batch_size=12):
         """
         This function is used to build Hyphen model.
         """
         embeddings_index = {}
 
-        self.glove_dir = f"{DATA_PATH}/glove.twitter.27B.100d.txt"
+        self.glove_dir = f"{DATA_PATH}/glove.twitter.27B.{self.embedding_dim}d.txt"
         # self.glove_dir = f"{DATA_PATH}/poincare_glove_100D_cosh-dist-sq_init_trick.txt"
 
         f = open(self.glove_dir, encoding="utf-8")
@@ -128,7 +130,7 @@ class Trainer:
 
         # get word index
         word_index = self.tokenizer.vocab
-        embedding_matrix = np.random.random((len(word_index) + 1, embedding_dim))
+        embedding_matrix = np.random.random((len(word_index) + 1, self.embedding_dim))
 
         # create embedding matrix.
         for word, i in word_index.items():
@@ -142,11 +144,13 @@ class Trainer:
             self.max_sent_length,
             self.max_word_length,
             self.graph_hidden,
-        ) = (50, 50, 50, 50, 100)
+        ) = (self.embedding_dim//2, self.embedding_dim//2, 50, 50, self.embedding_dim)
         if self.model_type == HYPHEN:
             model = Hyphen(
                 manifold=self.manifold,
                 embedding_matrix=embedding_matrix,
+                embedding_dim=self.embedding_dim,
+                latent_dim=self.embedding_dim,
                 word_hidden_size=self.word_hidden_size,
                 sent_hidden_size=self.sent_hidden_size,
                 max_sent_length=self.max_sent_length,
@@ -165,6 +169,8 @@ class Trainer:
         else:
             model = SSM4RC(
                 manifold=self.manifold,
+                embedding_dim=self.embedding_dim,
+                latent_dim=self.embedding_dim,
                 embedding_matrix=embedding_matrix,
                 word_hidden_size=self.word_hidden_size,
                 sent_hidden_size=self.sent_hidden_size,
@@ -259,7 +265,7 @@ class Trainer:
         self.tokenizer = pickle.load(open("tokenizer.pkl", "rb"))
         print("Building model....")
         self.model = self._build_model(
-            n_classes=train_y.shape[-1], batch_size=batch_size, embedding_dim=100
+            n_classes=train_y.shape[-1], batch_size=batch_size
         )
         print("Model built.")
 
@@ -368,9 +374,7 @@ class Trainer:
         self._fit_on_texts(train_x, val_x)
 
         print("Building model....")
-        self.model = self._build_model(
-            n_classes=train_y.shape[-1], batch_size=batch_size, embedding_dim=100
-        )
+        self.model = self._build_model(n_classes=train_y.shape[-1], batch_size=batch_size)
         print("Model built.")
 
         print("Encoding texts....")

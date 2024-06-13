@@ -53,7 +53,8 @@ if args.manifold.lower() != 'lorentz':
         content_module=args.no_content, 
         fourier = args.no_fourier,
         curv=1.0,
-        enable_log=args.enable_log
+        enable_log=args.enable_log,
+        embedding_dim=50
     )
 else:
     hyphen = LorentzTrainer(

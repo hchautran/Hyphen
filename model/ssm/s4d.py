@@ -343,7 +343,7 @@ class SSM4RC(nn.Module):
         )
         print('building CoAttention')
         self.coattention = CoAttention(
-            embedding_dim=latent_dim, 
+            embedding_dim=embedding_dim, 
             latent_dim=latent_dim, 
             manifold=self.manifold,  
             fourier=self.fourier
