@@ -6,7 +6,7 @@ import dgl
 
 class FakeNewsDataset(Dataset):
 
-    def __init__(self, content, comment, comment_graph, labels, subgraphs , max_length_sentences=30, max_length_word=35):
+    def __init__(self, content, comment, comment_graph, labels, subgraphs ):
         super(FakeNewsDataset, self).__init__()
 
         self.content = content
@@ -14,10 +14,6 @@ class FakeNewsDataset(Dataset):
         self.comment_graph = comment_graph
         self.labels = labels
         self.subgraphs= subgraphs
-
-        self.max_length_sentences = max_length_sentences
-        self 
-        self.max_length_word = max_length_word
 
         self.num_classes = len(np.unique(self.labels))
 

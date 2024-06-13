@@ -27,8 +27,6 @@ class PostEnc(nn.Module):
         batch_size, 
         num_classes, 
         embedding_matrix, 
-        max_sent_length, 
-        max_word_length, 
         device,
         manifold:PoincareBall,
     ):
@@ -37,8 +35,6 @@ class PostEnc(nn.Module):
         self.device = device
         self.word_hidden_size = word_hidden_size
         self.sent_hidden_size = sent_hidden_size
-        self.max_sent_length = max_sent_length
-        self.max_word_length = max_word_length
         self.manifold = manifold
         self.word_att_net = H_WordAttNet(embedding_matrix, word_hidden_size)
         self.sent_att_net = H_SentAttNet(sent_hidden_size, word_hidden_size, num_classes, self.manifold.c)

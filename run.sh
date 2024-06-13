@@ -1,8 +1,12 @@
 # for dataset in twitter15 twitter16 rumoureval pheme
-for dataset in twitter16 pheme rumoureval  
-do
-    # for model in  hyphen  ssm4rc
-    # do
-        python run.py --manifold poincare --lr 0.001 --dataset $dataset --batch-size 32 --epochs 50 --max-sents 20 --max-coms 10 --max-com-len 10 --max-sent-len 20 --log-path logging/run --model $1
-    # done
+
+for embedding_dim in 50 100 200 
+do 
+    for dataset in twitter15 twitter16 antivax politifact  pheme  
+    do
+        # for model in  ssm4rc hyphen
+        # do
+            CUDA_VISIBLE_DEVICES=$1 python run.py --manifold poincare --lr 0.001 --dataset $dataset --batch-size 32 --epochs 50 --max-sents 50 --max-coms 50 --max-com-len 10 --max-sent-len 50 --log-path logging/run --model $2 --embedding-dim $embedding_dim --enable-log
+        # done
+    done
 done

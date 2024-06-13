@@ -17,12 +17,9 @@ class Hyphen(nn.Module):
         embedding_matrix,  
         word_hidden_size, 
         sent_hidden_size, 
-        max_sent_length, 
-        max_word_length, 
         device, 
         graph_hidden, 
         num_classes = 2, 
-        max_sentence_count = 50 , 
         max_comment_count = 10, 
         batch_size = 32 ,
         embedding_dim = 100, 
@@ -41,13 +38,10 @@ class Hyphen(nn.Module):
         self.graph_glove_dim = graph_glove_dim#the dimension of glove embeddings used to initialise the comments amr graph
         self.batch_size = batch_size
         self.embedding_dim = embedding_dim
-        self.max_sentence_count = max_sentence_count
         self.max_comment_count = max_comment_count
         self.device = device
         self.word_hidden_size = word_hidden_size
         self.sent_hidden_size = sent_hidden_size
-        self.max_sent_length = max_sent_length
-        self.max_word_length  = max_word_length 
         self.graph_hidden = graph_hidden
         self.manifold = manifold 
         self.comment_module = comment_module
@@ -59,8 +53,6 @@ class Hyphen(nn.Module):
             batch_size=batch_size, 
             num_classes=num_classes, 
             embedding_matrix=embedding_matrix, 
-            max_sent_length=self.max_sent_length, 
-            max_word_length=self.max_word_length, 
             device=self.device, 
             manifold=self.manifold, 
         )

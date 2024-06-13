@@ -239,14 +239,14 @@ class S4DEnc(nn.Module):
         self.manifold = manifold
         self.word_ssm= S4Model(d_input=word_hidden_size, d_model=word_hidden_size//2, d_output=sent_hidden_size, n_layers=1, prenorm=False, d_state=32, factor=2)
         self.sent_ssm= S4Model(d_input=sent_hidden_size, d_model=sent_hidden_size//2, d_output=sent_hidden_size, n_layers=1, prenorm=False, d_state=32, factor=2)
-        self.word_weight = nn.Parameter(torch.Tensor(word_hidden_size, word_hidden_size))
-        self.word_bias = nn.Parameter(torch.Tensor(1, word_hidden_size))
+        # self.word_weight = nn.Parameter(torch.Tensor(word_hidden_size, word_hidden_size))
+        # self.word_bias = nn.Parameter(torch.Tensor(1, word_hidden_size))
         self.context_weight = nn.Parameter(torch.Tensor(word_hidden_size, 1))
         self.lookup = self.create_embeddeding_layer(embedding_matrix)
         self._create_weights(mean=0.0, std=0.05)
 
     def _create_weights(self, mean=0.0, std=0.05):
-        self.word_weight.data.normal_(mean, std)
+        # self.word_weight.data.normal_(mean, std)
         self.context_weight.data.normal_(mean, std)
 
     def forward(self, input):
@@ -254,14 +254,14 @@ class S4DEnc(nn.Module):
         # input = input.permute(1, 0, 2)
         for x in input:
             x = self.lookup(x)
-            x = self.word_ssm(x=x, pooling=False) 
+            x = self.word_ssm(x=x, pooling=True) 
             # print(x.shape)
-            output = matrix_mul(x, self.word_weight, self.word_bias)
-            # print('after word_weight',output.shape)
-            output = matrix_mul(output, self.context_weight).permute(1,0)[..., None]
-            output = F.softmax(output, dim=-1)
-            # print(output.shape)
-            x = (x.transpose(-1,-2) @ output).squeeze(-1)
+            # output = matrix_mul(x, self.word_weight, self.word_bias)
+            # # print('after word_weight',output.shape)
+            # output = matrix_mul(x, self.context_weight).permute(1,0)[..., None]
+            # output = F.softmax(output, dim=-1)
+            # # print(output.shape)
+            # x = (x.transpose(-1,-2) @ output).squeeze(-1)
             output_list.append(x)
 
         output = torch.stack(output_list, dim=0)
@@ -292,13 +292,9 @@ class SSM4RC(nn.Module):
         embedding_matrix,  
         word_hidden_size, 
         sent_hidden_size, 
-        max_sent_length, 
-        max_word_length, 
         device, 
         graph_hidden, 
         num_classes = 2, 
-        max_sentence_count = 50 , 
-        max_comment_count = 10, 
         batch_size = 32 ,
         embedding_dim = 100, 
         latent_dim = 100, 
@@ -316,13 +312,9 @@ class SSM4RC(nn.Module):
         self.graph_glove_dim = graph_glove_dim#the dimension of glove embeddings used to initialise the comments amr graph
         self.batch_size = batch_size
         self.embedding_dim = embedding_dim
-        self.max_sentence_count = max_sentence_count
-        self.max_comment_count = max_comment_count
         self.device = device
         self.word_hidden_size = word_hidden_size
         self.sent_hidden_size = sent_hidden_size
-        self.max_sent_length = max_sent_length
-        self.max_word_length  = max_word_length 
         self.graph_hidden = graph_hidden
         self.manifold = manifold 
         self.comment_module = comment_module

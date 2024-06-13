@@ -66,7 +66,7 @@ class Trainer:
         if self.log_enable:
             wandb.init(
                 project='SSM4RC',
-                name=f'{self.model_type}_{platform}_poincare',
+                name=f'{self.model_type}_{platform}_poincare_{self.embedding_dim}',
                 config={
                     'dataset': platform,
                     'type': self.model_type 
@@ -82,27 +82,7 @@ class Trainer:
         """
         Creates vocabulary set from the news content and the comments
         """
-        # texts = []
-        # texts.extend(train_x)
-        # texts.extend(val_x)
-        # tokenizer = Tokenizer(models.WordLevel( unk_token="[UNK]"))
-        # tokenizer.normalizer = normalizers.NFKC()
-        # tokenizer.pre_tokenizer = pre_tokenizers.Whitespace()
-        # # tokenizer.decoder = decoders.ByteLevel()
-        # trainer = trainers.WordLevelTrainer(
-        #     vocab_size=500000,
-        #     initial_alphabet=pre_tokenizers.ByteLevel.alphabet(),
-        #     special_tokens=["<PAD>", "<BOS>", "<EOS>", "[UNK]"],
-        # )
-        # all_sentences = []
-        # for text in texts:
-        #     for sentence in text:
-        #         all_sentences.append(sentence)
-        # print(len(all_sentences))
-
-        # tokenizer.train_from_iterator(all_sentences, trainer=trainer)
-        # self.tokenizer = tokenizer 
-
+     
         self.tokenizer = AutoTokenizer.from_pretrained('bert-base-uncased')
         print("saved tokenizer")
 
@@ -141,10 +121,8 @@ class Trainer:
         (
             self.word_hidden_size,
             self.sent_hidden_size,
-            self.max_sent_length,
-            self.max_word_length,
             self.graph_hidden,
-        ) = (self.embedding_dim//2, self.embedding_dim//2, 50, 50, self.embedding_dim)
+        ) = (self.embedding_dim//2, self.embedding_dim//2, self.embedding_dim)
         if self.model_type == HYPHEN:
             model = Hyphen(
                 manifold=self.manifold,
@@ -153,14 +131,11 @@ class Trainer:
                 latent_dim=self.embedding_dim,
                 word_hidden_size=self.word_hidden_size,
                 sent_hidden_size=self.sent_hidden_size,
-                max_sent_length=self.max_sent_length,
-                max_word_length=self.max_word_length,
                 device=self.device,
                 graph_hidden=self.graph_hidden,
                 batch_size=batch_size,
                 num_classes=n_classes,
                 max_comment_count=self.max_coms,
-                max_sentence_count=self.max_sents,
                 comment_module=self.comment_module,
                 content_module=self.content_module,
                 fourier=self.fourier,
@@ -174,14 +149,10 @@ class Trainer:
                 embedding_matrix=embedding_matrix,
                 word_hidden_size=self.word_hidden_size,
                 sent_hidden_size=self.sent_hidden_size,
-                max_sent_length=self.max_sent_length,
-                max_word_length=self.max_word_length,
                 device=self.device,
                 graph_hidden=self.graph_hidden,
                 batch_size=batch_size,
                 num_classes=n_classes,
-                max_comment_count=self.max_coms,
-                max_sentence_count=self.max_sents,
                 comment_module=self.comment_module,
                 content_module=self.content_module,
                 fourier=self.fourier,
@@ -196,45 +167,14 @@ class Trainer:
 
         return model
 
-    # def _encode_texts(self, texts):
-    #     """
-    #     Pre process the news content sentences to equal length for feeding to GRU
-    #     :param texts:
-    #     :return:
-    #     """
-    #     encoded_texts = np.zeros((len(texts), self.max_sents, self.max_sen_len), dtype='int32')
-    #     for i, text in enumerate(texts):
-    #         # ids = [item.ids for item in self.tokenizer.encode_batch(text)]
-    #         # print(text)
-    #         # print('='*50)
-    #         if isinstance(text, str): continue 
-    #         sents = self.tokenizer.encode_batch(text)
-    #         encoded_sents = []
-    #         for sent in sents:
-    #             encoded_sent = np.array(torch.nn.functional.pad(
-    #                 torch.tensor(sent.ids)[np.newaxis, ...],
-    #                 pad=(0, self.max_sen_len - torch.tensor(sent.ids).shape[0]), 
-    #                 mode='constant', 
-    #                 value=0
-    #             ))[:self.max_sents]
-    #             # print(encoded_sent)
-    #             encoded_sents.append(encoded_sent)
 
-    #         encoded_sents = np.concatenate(encoded_sents, axis=0)
-    #         # print(encoded_sents)
-            
-    #         encoded_texts[i][:len(encoded_sents)] = encoded_sents
-            
-
-    #     return encoded_texts
-
-    def _encode_texts(self, texts):
+    def _encode_texts(self, texts, max_sents, max_sen_len):
         """
         Pre process the news content sentences to equal length for feeding to GRU
         :param texts:
         :return:
         """
-        encoded_texts = np.zeros((len(texts), self.max_sents, self.max_sen_len), dtype='int32')
+        encoded_texts = np.zeros((len(texts), max_sents, max_sen_len), dtype='int32')
         for i, text in enumerate(texts):
             # ids = [item.ids for item in self.tokenizer.encode_batch(text)]
             ids = self.tokenizer(text, return_tensors='np', padding=True, truncation=True, max_length=self.max_sen_len)['input_ids']
@@ -245,23 +185,27 @@ class Trainer:
                     mode='constant', 
                     value=0
                 )
-            )[:self.max_sents]
+            )[:max_sents]
             
             encoded_texts[i][:len(encoded_text)] = encoded_text
         return encoded_texts
 
-    def test(
+    def train(
         self,
         train_x,
+        train_raw_c,
         train_y,
         train_c,
         val_c,
-        val_x,
+        val_raw_c,
         val_y,
+        val_x,
         sub_train,
         sub_val,
         batch_size=9,
+        epochs=5,
     ):
+
         self.tokenizer = pickle.load(open("tokenizer.pkl", "rb"))
         print("Building model....")
         self.model = self._build_model(
@@ -273,29 +217,28 @@ class Trainer:
         # Create encoded input for content and comments
         encoded_train_x = self._encode_texts(train_x)
         encoded_val_x = self._encode_texts(val_x)
+        encoded_train_c = self._encode_texts(train_raw_c, self.max_coms, self.max_com_len)
+        encoded_val_c = self._encode_texts(val_raw_c, self.max_coms, self.max_com_len)
         print("preparing dataset....")
 
         # adding self loops in the dgl graphs
         train_c = [dgl.add_self_loop(i) for i in train_c]
         val_c = [dgl.add_self_loop(i) for i in val_c]
 
+
         train_dataset = FakeNewsDataset(
             encoded_train_x,
+            encoded_train_c,
             train_c,
             train_y,
             sub_train,
-            self.glove_dir,
-            self.max_sent_length,
-            self.max_word_length,
         )
         val_dataset = FakeNewsDataset(
             encoded_val_x,
+            encoded_val_c,
             val_c,
             val_y,
             sub_val,
-            self.glove_dir,
-            self.max_sent_length,
-            self.max_word_length,
         )
 
         train_loader = DataLoader(
@@ -331,17 +274,22 @@ class Trainer:
         total_samples = 0
         As_batch, Ac_batch, predictions_batch = [], [], []
         for i, sample in enumerate(self.dataloaders["val"]):
-            content, comment, label, subgraphs = sample
+            content, comment, comment_graph ,label, subgraphs = sample
             num_sample = len(label)  # last batch size
             total_samples += num_sample
 
-            comment = comment.to(self.device)
-            content = content.to(self.device)
-            label = label.to(self.device)
 
             self.model.content_encoder._init_hidden_state(num_sample)
 
-            predictions, As, Ac = self.model(content, comment, subgraphs)
+            if self.model_type == HYPHEN:
+                self.model.content_encoder._init_hidden_state(len(label))
+                predictions,As,Ac = self.model(
+                    content=content, comment=comment_graph, subgraphs=subgraphs
+                )
+            else:
+                predictions,As,Ac = self.model(
+                    content=content, comment=comment
+                )  # As and Ac are the attention weights we
 
             te_loss = self.criterion(predictions, label)
             loss_ls.append(te_loss * num_sample)
@@ -376,13 +324,12 @@ class Trainer:
         print("Building model....")
         self.model = self._build_model(n_classes=train_y.shape[-1], batch_size=batch_size)
         print("Model built.")
-
         print("Encoding texts....")
         # Create encoded input for content and comments
-        encoded_train_x = self._encode_texts(train_x)
-        encoded_val_x = self._encode_texts(val_x)
-        encoded_train_c = self._encode_texts(train_raw_c)
-        encoded_val_c = self._encode_texts(val_raw_c)
+        encoded_train_x = self._encode_texts(train_x, self.max_sents,self.max_sen_len)
+        encoded_val_x = self._encode_texts(val_x, self.max_sents,self.max_sen_len)
+        encoded_train_c = self._encode_texts(train_raw_c, self.max_coms, self.max_sen_len)
+        encoded_val_c = self._encode_texts(val_raw_c, self.max_coms, self.max_sen_len)
         print("preparing dataset....")
 
         # adding self loops in the dgl graphs
@@ -390,22 +337,18 @@ class Trainer:
         val_c = [dgl.add_self_loop(i) for i in val_c]
 
         train_dataset = FakeNewsDataset(
-            encoded_train_x,
-            encoded_train_c,
-            train_c,
-            train_y,
-            sub_train,
-            self.max_sent_length,
-            self.max_word_length,
+            content=encoded_train_x,
+            comment=encoded_train_c,
+            comment_graph=train_c,
+            labels=train_y,
+            subgraphs=sub_train,
         )
         val_dataset = FakeNewsDataset(
-            encoded_val_x,
-            encoded_val_c,
-            val_c,
-            val_y,
-            sub_val,
-            self.max_sent_length,
-            self.max_word_length,
+            content=encoded_val_x,
+            comment=encoded_val_c,
+            comment_graph=val_c,
+            labels=val_y,
+            subgraphs=sub_val,
         )
 
         train_loader = DataLoader(
