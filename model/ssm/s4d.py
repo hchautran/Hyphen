@@ -240,8 +240,8 @@ class S4DEnc(nn.Module):
     ):
         super(S4DEnc, self).__init__()
         self.manifold = manifold
-        self.word_ssm= S4Model(d_input=word_hidden_size, d_model=word_hidden_size, d_output=sent_hidden_size, n_layers=1, prenorm=False, d_state=32, factor=2)
-        self.sent_ssm= S4Model(d_input=sent_hidden_size, d_model=sent_hidden_size, d_output=sent_hidden_size, n_layers=1, prenorm=False, d_state=32, factor=2)
+        self.word_ssm= S4Model(d_input=word_hidden_size, d_model=word_hidden_size//2, d_output=sent_hidden_size, n_layers=1, prenorm=False, d_state=32, factor=2)
+        self.sent_ssm= S4Model(d_input=sent_hidden_size, d_model=sent_hidden_size//2, d_output=sent_hidden_size, n_layers=1, prenorm=False, d_state=32, factor=2)
         self.word_weight = nn.Parameter(torch.Tensor(word_hidden_size, word_hidden_size))
         self.word_bias = nn.Parameter(torch.Tensor(1, word_hidden_size))
         self.context_weight = nn.Parameter(torch.Tensor( sent_hidden_size, 1))
@@ -253,13 +253,7 @@ class S4DEnc(nn.Module):
         for x in input:
             x = self.lookup(x)
             output= self.word_ssm(x=x, pooling=True) 
-            # x = matrix_mul(output, self.word_weight, self.word_bias)
-            # print(x.shape)
-            # print(self.context_weight.data.shape)
-            # x = matrix_mul(x, self.context_weight).permute(1,0)
-            # print(x.shape)
-            # weight = F.softmax(x, dim = -1)
-            # output = element_wise_mul(output, weight.permute(1,0))
+          
             output_list.append(output)
         output = torch.stack(output_list, dim=0)
         x = self.sent_ssm(output)
@@ -267,10 +261,7 @@ class S4DEnc(nn.Module):
         x_norm = torch.norm(x, dim=-1, keepdim=True) + 1e-5
         fac = torch.minimum(torch.ones_like(x_norm), clip_r/ x_norm)
         x = x * fac
-        # x = torch.nn.functional.pad(x, (1,0), "constant", 0)
         output = self.manifold.expmap0(x)
-        # print(output.shape)
-        
         return output 
 
 

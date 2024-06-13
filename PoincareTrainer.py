@@ -37,6 +37,7 @@ class Trainer:
         comment_module,
         fourier,
         curv=1.0,
+        enable_log=False,
     ):
         self.model_type = model_type
         self.model = None
@@ -59,11 +60,11 @@ class Trainer:
         self.fourier = fourier
         self.platform = platform
      
-        self.log_enable = False 
+        self.log_enable = enable_log 
         if self.log_enable:
             wandb.init(
                 project='SSM4RC',
-                name=f'{platform}_poincare',
+                name=f'{self.model_type}_{platform}_poincare',
                 config={
                     'dataset': platform,
                     'type': self.model_type 
@@ -456,9 +457,9 @@ class Trainer:
 
 
                 if self.model_type == HYPHEN:
-                    self.model.content_encoder._init_hidden_state(self.device, len(label))
+                    self.model.content_encoder._init_hidden_state(len(label))
                     predictions,_,_ = self.model(
-                        content=content, comment_graph=comment_graph, subgraphs=subgraphs
+                        content=content, comment=comment_graph, subgraphs=subgraphs
                     )
                 else:
                     predictions,_,_ = self.model(
@@ -487,9 +488,9 @@ class Trainer:
                 num_sample = len(label)  # last batch size
                 total_samples += num_sample
                 if self.model_type == HYPHEN:
-                    self.model.content_encoder._init_hidden_state( self.device, num_sample)
+                    self.model.content_encoder._init_hidden_state(num_sample)
                     predictions,_,_ = self.model(
-                        content=content, comment_graph=comment_graph, subgraphs=subgraphs
+                        content=content, comment=comment_graph, subgraphs=subgraphs
                     )  # As and Ac are the attention weights we are returning
                 else:
                     predictions,_,_ = self.model(

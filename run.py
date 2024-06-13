@@ -23,6 +23,7 @@ parser.add_argument('--max-sent-len', type = int, default = 10, help='Specify th
 parser.add_argument('--batch-size', type = int,  default = 32,  help='Specify the batch size of the dataset.')
 parser.add_argument('--epochs', type = int, default= 5, help='The number of epochs to train Hyphen.')
 parser.add_argument('--model', type = str, default= HYPHEN, help='model type')
+parser.add_argument('--enable-log', action='store_true', default=False , help='log to wandb')
 
 args = parser.parse_args()
 
@@ -60,6 +61,7 @@ if args.manifold.lower() != 'lorentz':
         content_module=args.no_content, 
         fourier = args.no_fourier,
         curv=1.0,
+        enable_log=args.enable_log
     )
 else:
     hyphen = LorentzTrainer(
