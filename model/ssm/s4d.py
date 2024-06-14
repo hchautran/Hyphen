@@ -9,6 +9,7 @@ import torch.nn as nn
 from ..coattention.poincare import CoAttention
 from ..utils.layers.hyp_layers import *
 from hyptorch.geoopt import PoincareBall 
+from hyptorch.poincare.layers import PMLR 
 from ..utils.utils import matrix_mul, element_wise_mul
 
 
@@ -197,32 +198,15 @@ class S4Model(nn.Module):
         for layer, norm, dropout in zip(self.s4_layers, self.norms, self.dropouts):
             # Each iteration of this loop will map (B, d_model, L) -> (B, d_model, L)
             z = x
-            if self.prenorm:
-                # Prenorm
-                z = norm(z.transpose(-1, -2)).transpose(-1, -2)
-
-            # Apply S4 block: we ignore the state input and output
             z, _ = layer(z)
-
-            # Dropout on the output of the S4 block
             z = dropout(z)
-
-            # Residual connection
             x = z + x
-
-            if not self.prenorm:
-                # Postnorm
-                x = norm(x.transpose(-1, -2)).transpose(-1, -2)
+            x = norm(x.transpose(-1, -2)).transpose(-1, -2)
 
         x = x.transpose(-1, -2)
-        
-
-        # Pooling: average pooling over the sequence length
         x = self.decoder(x)  #
-
         if pooling:
-            return  x.mean(dim=1)
-
+            return x.mean(dim=1)
         return x
 
 
@@ -233,20 +217,21 @@ class S4DEnc(nn.Module):
         word_hidden_size, 
         sent_hidden_size, 
         embedding_matrix, 
-        
+        factor=2,
+        pooling_mode = 'mean'
     ):
         super(S4DEnc, self).__init__()
         self.manifold = manifold
-        self.word_ssm= S4Model(d_input=word_hidden_size, d_model=word_hidden_size//2, d_output=sent_hidden_size, n_layers=1, prenorm=False, d_state=32, factor=2)
-        self.sent_ssm= S4Model(d_input=sent_hidden_size, d_model=sent_hidden_size//2, d_output=sent_hidden_size, n_layers=1, prenorm=False, d_state=32, factor=2)
-        # self.word_weight = nn.Parameter(torch.Tensor(word_hidden_size, word_hidden_size))
-        # self.word_bias = nn.Parameter(torch.Tensor(1, word_hidden_size))
+        self.pooling_mode = pooling_mode
+        self.word_ssm= S4Model(d_input=word_hidden_size, d_model=word_hidden_size//2, d_output=sent_hidden_size, n_layers=1, prenorm=False, d_state=word_hidden_size//2, factor=factor)
+        self.sent_ssm= S4Model(d_input=sent_hidden_size, d_model=sent_hidden_size//2, d_output=sent_hidden_size, n_layers=1, prenorm=False, d_state=sent_hidden_size//2, factor=factor)
+        self.word_weight= nn.Parameter(torch.Tensor(word_hidden_size, word_hidden_size))
         self.context_weight = nn.Parameter(torch.Tensor(word_hidden_size, 1))
         self.lookup = self.create_embeddeding_layer(embedding_matrix)
         self._create_weights(mean=0.0, std=0.05)
 
     def _create_weights(self, mean=0.0, std=0.05):
-        # self.word_weight.data.normal_(mean, std)
+        self.word_weight.data.normal_(mean, std)
         self.context_weight.data.normal_(mean, std)
 
     def forward(self, input):
@@ -254,14 +239,14 @@ class S4DEnc(nn.Module):
         # input = input.permute(1, 0, 2)
         for x in input:
             x = self.lookup(x)
-            x = self.word_ssm(x=x, pooling=True) 
-            # print(x.shape)
-            # output = matrix_mul(x, self.word_weight, self.word_bias)
-            # # print('after word_weight',output.shape)
-            # output = matrix_mul(x, self.context_weight).permute(1,0)[..., None]
-            # output = F.softmax(output, dim=-1)
-            # # print(output.shape)
-            # x = (x.transpose(-1,-2) @ output).squeeze(-1)
+            if self.pooling_mode == 'mean': 
+                x = self.word_ssm(x=x, pooling=True) 
+            else:
+                x = self.word_ssm(x=x, pooling=False) 
+                output = matrix_mul(x, self.word_weight, self.word_bias)
+                output = matrix_mul(x, self.context_weight).permute(1,0)[..., None]
+                output = F.softmax(output, dim=-1)
+                x = (x.transpose(-1,-2) @ output).squeeze(-1)
             output_list.append(x)
 
         output = torch.stack(output_list, dim=0)
@@ -346,14 +331,6 @@ class SSM4RC(nn.Module):
             # PMLR.UnidirectionalPoincareMLR(2*latent_dim, num_classes, ball=self.manifold)
             nn.Linear(2*latent_dim, num_classes)
         )
-
-    def hir_loss(self, embeddings):
-        # regularization on the tangent distance to the origin without changing original embeddings
-        embeddings_tan = self.manifold.logmap0(embeddings)
-        embeddings_tan = embeddings_tan - embeddings_tan.mean(dim=0)  # Equation (7)
-        tangent_mean_norm = (1e-6 + embeddings_tan.pow(2).sum(dim=1).mean())
-        tangent_mean_norm = -tangent_mean_norm
-        return (max(tangent_mean_norm, -10) + 10)
 
     def forward(self, content, comment):
         

@@ -65,11 +65,13 @@ class Trainer:
         self.log_enable = enable_log 
         if self.log_enable:
             wandb.init(
-                project='SSM4RC',
-                name=f'{self.model_type}_{platform}_poincare_{self.embedding_dim}',
+                project=platform,
+                name=f'{self.model_type}_{self.embedding_dim}_poincare',
                 config={
-                    'dataset': platform,
-                    'type': self.model_type 
+                    'type': self.model_type,
+                    'embedding_dim': self.embedding_dim,
+                    'max_sents': self.max_sents,
+                    'max_coms': self.max_coms,
                 }
             )
 
@@ -78,7 +80,7 @@ class Trainer:
             wandb.log(stats)
             
 
-    def _fit_on_texts(self, train_x, val_x):
+    def _fit_on_texts(self):
         """
         Creates vocabulary set from the news content and the comments
         """
@@ -319,7 +321,7 @@ class Trainer:
     ):
 
         # Fit the vocabulary set on the content and comments
-        self._fit_on_texts(train_x, val_x)
+        self._fit_on_texts()
 
         print("Building model....")
         self.model = self._build_model(n_classes=train_y.shape[-1], batch_size=batch_size)
@@ -458,13 +460,13 @@ class Trainer:
             if f1 > best_f1:
                 print(f"Best F1: {f1}")
                 print("Saving best model!")
-                self.log({'best F1': f1})
+                self.log({'epoch':epoch, 'best F1': f1, 'best precision': best_precision, 'best recall': best_recall})
                 dst_dir = f"saved_models/{self.platform}/"
                 os.makedirs(dst_dir, exist_ok=True)
                 torch.save(
                     self.model.state_dict(), f"{dst_dir}best_model_{self.manifold}.pt"
                 )
-                best_model = self.model
+                self.best_model = self.model
                 best_f1 = f1
 
             te_loss = sum(loss_ls) / total_samples

@@ -1,6 +1,6 @@
 # for dataset in twitter15 twitter16 rumoureval pheme
 
-for embedding_dim in 50 100 200 
+for embedding_dim in 50 100 
 do 
     for dataset in twitter15 twitter16 antivax politifact  pheme  
     do
