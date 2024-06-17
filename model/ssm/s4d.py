@@ -6,11 +6,15 @@ import torch.nn as nn
 from einops import rearrange, repeat
 import torch
 import torch.nn as nn
-from ..coattention.poincare import CoAttention
+from ..coattention.poincare import CoAttention as PoincareCoAttn
+from ..coattention.euclidean import CoAttention as EuclidCoAttn
+from ..coattention.lorentz import CoAttention as LorentzCoAttn
 from ..utils.layers.hyp_layers import *
-from hyptorch.geoopt import PoincareBall 
-from hyptorch.poincare.layers import PMLR 
+from hyptorch.geoopt import PoincareBall, Euclidean
+from hyptorch.lorentz.manifold import CustomLorentz
+from hyptorch.lorentz.layers import LorentzMLR 
 from ..utils.utils import matrix_mul, element_wise_mul
+from typing import Union
 
 
 if tuple(map(int, torch.__version__.split('.')[:2])) == (1, 11):
@@ -251,12 +255,13 @@ class S4DEnc(nn.Module):
 
         output = torch.stack(output_list, dim=0)
         x = self.sent_ssm(output)
+        if not isinstance(self.manifold, Euclidean):
+            clip_r = 2.0 
+            x_norm = torch.norm(x, dim=-1, keepdim=True) + 1e-5
+            fac = torch.minimum(torch.ones_like(x_norm), clip_r/ x_norm)
+            x = x * fac
+            output = self.manifold.expmap0(x)
 
-        clip_r = 2.0 
-        x_norm = torch.norm(x, dim=-1, keepdim=True) + 1e-5
-        fac = torch.minimum(torch.ones_like(x_norm), clip_r/ x_norm)
-        x = x * fac
-        output = self.manifold.expmap0(x)
         return output 
 
 
@@ -273,7 +278,7 @@ class SSM4RC(nn.Module):
 
     def __init__(
         self, 
-        manifold:PoincareBall,
+        manifold:Union[PoincareBall, CustomLorentz],
         embedding_matrix,  
         word_hidden_size, 
         sent_hidden_size, 
@@ -319,18 +324,32 @@ class SSM4RC(nn.Module):
             embedding_matrix=embedding_matrix
         )
         print('building CoAttention')
-        self.coattention = CoAttention(
-            embedding_dim=embedding_dim, 
-            latent_dim=latent_dim, 
-            manifold=self.manifold,  
-            fourier=self.fourier
-        )
-        
-        self.fc = nn.Sequential(
-            # HypLinear(manifold=self.manifold, in_features=2*latent_dim, out_features=2*latent_dim,c=self.manifold.c, use_bias=True, dropout=0.1),
-            # PMLR.UnidirectionalPoincareMLR(2*latent_dim, num_classes, ball=self.manifold)
-            nn.Linear(2*latent_dim, num_classes)
-        )
+
+        if isinstance(self.manifold, CustomLorentz):
+            self.coattention = LorentzCoAttn(
+                embedding_dim=embedding_dim, 
+                latent_dim=latent_dim, 
+                manifold=self.manifold,  
+                fourier=self.fourier
+            )
+            self.fc = LorentzMLR(self.manifold, num_features=2*latent_dim+1, num_classes=2)
+            # self.fc =  nn.Linear(2*latent_dim+1, num_classes)
+        elif isinstance(self.manifold, PoincareBall):
+            self.coattention = PoincareCoAttn(
+                embedding_dim=embedding_dim, 
+                latent_dim=latent_dim, 
+                manifold=self.manifold,  
+                fourier=self.fourier
+            )
+            self.fc =  nn.Linear(2*latent_dim, num_classes)
+        else:
+            self.coattention = EuclidCoAttn(
+                embedding_dim=embedding_dim, 
+                latent_dim=latent_dim, 
+                fourier=self.fourier
+            )
+            self.fc =  nn.Linear(2*latent_dim, num_classes)
+
 
     def forward(self, content, comment):
         

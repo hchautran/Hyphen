@@ -10,12 +10,13 @@ class CoAttention(nn.Module):
 
     def __init__(
         self,
-        device,
+        manifold=None,
         latent_dim=100,
         embedding_dim=100,
         fourier=False,
     ):
         super(CoAttention, self).__init__()
+        self.manifold = manifold
 
         self.embedding_dim = embedding_dim
         self.latent_dim = latent_dim

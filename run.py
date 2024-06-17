@@ -3,8 +3,8 @@ import os
 import pickle
 import argparse
 parser = argparse.ArgumentParser()
-from LorentzTrainer import Trainer as LorentzTrainer
-from PoincareTrainer import Trainer as PoincareTrainer
+# from LorentzTrainer import Trainer as LorentzTrainer
+from Trainer import Trainer 
 from const import * 
 import pandas as pd
 
@@ -20,7 +20,7 @@ parser.add_argument('--max-sents', type = int, default= 20, help='Specify the ma
 parser.add_argument('--max-com-len', type = int, default= 10, help='Specify the maximum length of a user comment to feed in Hyphen.')
 parser.add_argument('--max-sent-len', type = int, default = 10, help='Specify the maximum length of a news sentence.')
 parser.add_argument('--batch-size', type = int,  default = 32,  help='Specify the batch size of the dataset.')
-parser.add_argument('--epochs', type = int, default= 5, help='The number of epochs to train Hyphen.')
+parser.add_argument('--epochs', type = int, default= 100, help='The number of epochs to train Hyphen.')
 parser.add_argument('--model', type = str, default= HYPHEN, help='model type')
 parser.add_argument('--enable-log', action='store_true', default=False , help='log to wandb')
 parser.add_argument('--embedding-dim', default=100, help='embedding dim')
@@ -40,39 +40,25 @@ y_train, y_val = props['train']['y'], props['val']['y']
 c_train, c_val = props['train']['c'], props['val']['c']
 sub_train, sub_val = props['train']['subgraphs'], props['val']['subgraphs']
 
+model = Trainer(
+    manifold=args.manifold,
+    model_type=args.model,
+    platform=args.dataset, 
+    max_sen_len=args.max_sent_len, 
+    max_com_len=args.max_com_len, 
+    max_sents=args.max_sents, 
+    max_coms=args.max_coms, 
+    lr = args.lr, 
+    comment_module=args.no_comment, 
+    content_module=args.no_content, 
+    fourier = args.no_fourier,
+    curv=1.0,
+    enable_log=args.enable_log,
+    embedding_dim=int(args.embedding_dim)
+)
 
-if args.manifold.lower() != 'lorentz':
-    hyphen = PoincareTrainer(
-        model_type=args.model,
-        platform=args.dataset, 
-        max_sen_len=args.max_sent_len, 
-        max_com_len=args.max_com_len, 
-        max_sents=args.max_sents, 
-        max_coms=args.max_coms, 
-        lr = args.lr, 
-        comment_module=args.no_comment, 
-        content_module=args.no_content, 
-        fourier = args.no_fourier,
-        curv=1.0,
-        enable_log=args.enable_log,
-        embedding_dim=int(args.embedding_dim)
-    )
-else:
-    hyphen = LorentzTrainer(
-        model_type=args.model,
-        platform=args.dataset, 
-        max_sen_len=args.max_sent_len, 
-        max_word_len=args.max_sent_len, 
-        max_com_len=args.max_com_len, 
-        max_sents=args.max_sents, 
-        max_coms=args.max_coms, 
-        lr = args.lr, 
-        comment_module=args.no_comment, 
-        content_module=args.no_content, 
-        fourier = args.no_fourier
-    )
 
-hyphen.train(
+model.train(
     train_x=x_train, 
     train_y=y_train, 
     train_c=c_train, 

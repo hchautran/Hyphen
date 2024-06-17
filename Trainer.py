@@ -11,7 +11,8 @@ import tqdm
 import dgl
 from hyptorch.geoopt.optim.radam import RiemannianAdam
 from model.utils.metrics import Metrics
-from model.Hyphen.poincare import Hyphen
+from model.Hyphen.poincare import Hyphen as PoincareHyphen
+from model.Hyphen.euclidean import Hyphen as EuclidHyphen
 from model.ssm.s4d import SSM4RC 
 from model.utils.dataset import FakeNewsDataset
 from model.utils.utils import get_evaluation
@@ -19,13 +20,15 @@ import wandb
 from tokenizers import Tokenizer, models, normalizers, pre_tokenizers, decoders, trainers
 from transformers import AutoTokenizer
 from const import * 
-from hyptorch.geoopt import PoincareBall
+from hyptorch.geoopt import PoincareBall, Euclidean
+from hyptorch.lorentz.manifold import CustomLorentz 
 from accelerate import Accelerator
 
 accelerator = Accelerator()
 class Trainer:
     def __init__(
         self,
+        manifold,
         model_type,
         platform,
         max_sen_len,
@@ -38,7 +41,7 @@ class Trainer:
         fourier,
         curv=1.0,
         enable_log=False,
-        embedding_dim=100
+        embedding_dim=100,
     ):
         self.model_type = model_type
         self.model = None
@@ -54,24 +57,33 @@ class Trainer:
         self.tokenizer = None
         self.metrics = Metrics()
         self.device = accelerator.device 
-        self.manifold = PoincareBall(c=curv)
+
         self.lr = lr
         self.content_module = content_module
         self.comment_module = comment_module
         self.fourier = fourier
         self.platform = platform
         self.embedding_dim=embedding_dim 
+
+        if manifold == EUCLID:
+            self.manifold = Euclidean()
+        elif manifold == POINCARE:
+            self.manifold = PoincareBall(c=curv)
+        else:
+            self.manifold = CustomLorentz(k=curv)
      
         self.log_enable = enable_log 
         if self.log_enable:
             wandb.init(
                 project=platform,
-                name=f'{self.model_type}_{self.embedding_dim}_poincare',
+                name=f'{self.model_type}_{self.embedding_dim}_{manifold}',
                 config={
                     'type': self.model_type,
+                    'manifold': manifold,
                     'embedding_dim': self.embedding_dim,
                     'max_sents': self.max_sents,
                     'max_coms': self.max_coms,
+                    'fourier': self.fourier
                 }
             )
 
@@ -90,7 +102,7 @@ class Trainer:
 
 
 
-    def _build_model(self, n_classes=2, batch_size=12):
+    def _build_hyphen(self, n_classes=2, batch_size=12):
         """
         This function is used to build Hyphen model.
         """
@@ -125,8 +137,8 @@ class Trainer:
             self.sent_hidden_size,
             self.graph_hidden,
         ) = (self.embedding_dim//2, self.embedding_dim//2, self.embedding_dim)
-        if self.model_type == HYPHEN:
-            model = Hyphen(
+        if isinstance(self.manifold, PoincareBall):
+            model = PoincareHyphen(
                 manifold=self.manifold,
                 embedding_matrix=embedding_matrix,
                 embedding_dim=self.embedding_dim,
@@ -142,25 +154,85 @@ class Trainer:
                 content_module=self.content_module,
                 fourier=self.fourier,
             )
-            self.optimizer = RiemannianAdam(model.parameters(), lr=self.lr)
         else:
-            model = SSM4RC(
+            model = EuclidHyphen(
                 manifold=self.manifold,
+                embedding_matrix=embedding_matrix,
                 embedding_dim=self.embedding_dim,
                 latent_dim=self.embedding_dim,
-                embedding_matrix=embedding_matrix,
                 word_hidden_size=self.word_hidden_size,
                 sent_hidden_size=self.sent_hidden_size,
                 device=self.device,
                 graph_hidden=self.graph_hidden,
                 batch_size=batch_size,
                 num_classes=n_classes,
+                max_comment_count=self.max_coms,
                 comment_module=self.comment_module,
                 content_module=self.content_module,
                 fourier=self.fourier,
             )
-            self.optimizer = RiemannianAdam(model.parameters(), lr=self.lr)
             
+        print(f"{self.model_type} built")
+        model = accelerator.prepare(model) 
+
+        self.optimizer = RiemannianAdam(model.parameters(), lr=self.lr)
+        self.optimizer = accelerator.prepare(self.optimizer)
+        self.criterion = nn.CrossEntropyLoss()
+
+        return model
+
+    def _build_ssm4rc(self, n_classes=2, batch_size=12):
+        """
+        This function is used to build Hyphen model.
+        """
+        embeddings_index = {}
+
+        self.glove_dir = f"{DATA_PATH}/glove.twitter.27B.{self.embedding_dim}d.txt"
+        # self.glove_dir = f"{DATA_PATH}/poincare_glove_100D_cosh-dist-sq_init_trick.txt"
+
+        f = open(self.glove_dir, encoding="utf-8")
+
+        for line in f:
+            values = line.split()
+            word = values[0]
+            coefs = np.asarray(values[1:], dtype="float32")
+            embeddings_index[word] = coefs
+            
+
+        f.close()
+
+        # get word index
+        word_index = self.tokenizer.vocab
+        embedding_matrix = np.random.random((len(word_index) + 1, self.embedding_dim))
+
+        # create embedding matrix.
+        for word, i in word_index.items():
+            embedding_vector = embeddings_index.get(word)
+            if embedding_vector is not None:
+                embedding_matrix[i] = embedding_vector
+
+        (
+            self.word_hidden_size,
+            self.sent_hidden_size,
+            self.graph_hidden,
+        ) = (self.embedding_dim//2, self.embedding_dim//2, self.embedding_dim)
+
+        model = SSM4RC(
+            manifold=self.manifold,
+            embedding_dim=self.embedding_dim,
+            latent_dim=self.embedding_dim,
+            embedding_matrix=embedding_matrix,
+            word_hidden_size=self.word_hidden_size,
+            sent_hidden_size=self.sent_hidden_size,
+            device=self.device,
+            graph_hidden=self.graph_hidden,
+            batch_size=batch_size,
+            num_classes=n_classes,
+            comment_module=self.comment_module,
+            content_module=self.content_module,
+            fourier=self.fourier,
+        )
+        self.optimizer = RiemannianAdam(model.parameters(), lr=self.lr)
         print(f"{self.model_type} built")
         model = accelerator.prepare(model) 
 
@@ -169,6 +241,8 @@ class Trainer:
 
         return model
 
+        
+        
 
     def _encode_texts(self, texts, max_sents, max_sen_len):
         """
@@ -210,9 +284,14 @@ class Trainer:
 
         self.tokenizer = pickle.load(open("tokenizer.pkl", "rb"))
         print("Building model....")
-        self.model = self._build_model(
-            n_classes=train_y.shape[-1], batch_size=batch_size
-        )
+        if self.model_type == HYPHEN:
+            self.model = self._build_hyphen(
+                n_classes=train_y.shape[-1], batch_size=batch_size
+            )
+        else:
+            self.model = self._build_ssm4rc(
+                n_classes=train_y.shape[-1], batch_size=batch_size
+            )
         print("Model built.")
 
         print("Encoding texts....")
@@ -324,8 +403,11 @@ class Trainer:
         self._fit_on_texts()
 
         print("Building model....")
-        self.model = self._build_model(n_classes=train_y.shape[-1], batch_size=batch_size)
-        print("Model built.")
+        if self.model_type == HYPHEN:
+            self.model = self._build_hyphen(n_classes=train_y.shape[-1], batch_size=batch_size)
+        else:
+            self.model = self._build_ssm4rc(n_classes=train_y.shape[-1], batch_size=batch_size)
+
         print("Encoding texts....")
         # Create encoded input for content and comments
         encoded_train_x = self._encode_texts(train_x, self.max_sents,self.max_sen_len)

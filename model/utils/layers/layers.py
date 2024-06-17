@@ -8,7 +8,7 @@ from torch.nn import Parameter
 from torch_geometric.nn.conv import MessagePassing
 from torch_geometric.utils import remove_self_loops
 from torch_scatter import scatter_add
-from utils.utils import glorot, zeros, add_self_loops
+from ..utils import glorot, zeros, add_self_loops
 
 class GraphConvolution(Module):
     def __init__(self, in_features, out_features, dropout, act, use_bias):

@@ -37,7 +37,6 @@ class CoAttention(nn.Module):
         self.concat_m1 = nn.Parameter(torch.Tensor((1, 1)))
         self.concat_m2 = nn.Parameter(torch.Tensor((1, 1)))
         self.concat_b = nn.Parameter(torch.Tensor((1, self.latent_dim)))
-        self.gelu = nn.GELU()
         self.act = LorentzAct(manifold=self.manifold, activation=nn.GELU()) 
         
 
@@ -83,8 +82,6 @@ class CoAttention(nn.Module):
 
             lorentz_sentence_rep = self.euclid_to_lorentz(sentence_rep)
             lorentz_comment_rep = self.euclid_to_lorentz(comment_rep) 
-            # self.manifold.assert_check_point_on_manifold(lorentz_comment_rep)
-            # self.manifold.assert_check_point_on_manifold(lorentz_sentence_rep)
         else:
             lorentz_sentence_rep = lmath.poincare_to_lorentz(sentence_rep, k=curv)
             lorentz_comment_rep = lmath.poincare_to_lorentz(comment_rep, k=curv)
@@ -105,7 +102,7 @@ class CoAttention(nn.Module):
         Hs_b = self.poincare.mobius_matvec(Hs_b.transpose(-1,-2), L)
 
         Hs = self.poincare.mobius_add(Hs_a, Hs_b)
-        Hs = self.poincare.expmap0(self.gelu(self.poincare.logmap0(Hs)))  # [32, 80, 50]
+        Hs = self.poincare.expmap0(F.tanh(self.poincare.logmap0(Hs)))  # [32, 80, 50]
 
         # Hc = torch.tanh(torch.matmul(self.Wc, comment_rep_trans)+ torch.matmul(torch.matmul(self.Ws, sentence_rep_trans), L_trans))
         Hc_a = self.Wc(lorentz_comment_rep)
@@ -116,7 +113,7 @@ class CoAttention(nn.Module):
 
         Hc_b = self.poincare.mobius_matvec(Hc_b.transpose(-1,-2), L.transpose(-1, -2))
         Hc = self.poincare.mobius_add(Hc_a.transpose(-1,-2), Hc_b.transpose(-1,-2))
-        Hc = self.poincare.expmap0(self.gelu(self.poincare.logmap0(Hc)))  # [32, 80, 10]
+        Hc = self.poincare.expmap0(F.tanh(self.poincare.logmap0(Hc)))  # [32, 80, 10]
 
         As = self.poincare.mobius_matvec(self.whs, Hs) 
         As = F.softmax(As.transpose(-1, -2), dim=-1)
@@ -138,5 +135,6 @@ class CoAttention(nn.Module):
         co_sc = torch.squeeze(co_sc)
 
         assert not torch.isnan(co_sc).any(), "co_sc is nan"
+        # co_sc = co_sc.narrow(-1, 1, co_sc.shape[-1] - 1)# [32, 200],
         return co_sc, As, Ac  # [32, 200],
 

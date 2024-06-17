@@ -20,10 +20,7 @@ class PostEnc(nn.Module):
         word_hidden_size, 
         sent_hidden_size, 
         batch_size, 
-        num_classes, 
         embedding_matrix, 
-        max_sent_length, 
-        max_word_length, 
         device, 
     ):
         super(PostEnc, self).__init__()
@@ -31,11 +28,9 @@ class PostEnc(nn.Module):
         self.device = device
         self.word_hidden_size = word_hidden_size
         self.sent_hidden_size = sent_hidden_size
-        self.max_sent_length = max_sent_length
-        self.max_word_length = max_word_length
 
         self.word_att_net = WordAttNet(embedding_matrix, word_hidden_size)
-        self.sent_att_net = SentAttNet(sent_hidden_size, word_hidden_size, num_classes)
+        self.sent_att_net = SentAttNet(sent_hidden_size, word_hidden_size)
         
         self._init_hidden_state()
         
@@ -62,7 +57,7 @@ class PostEnc(nn.Module):
 
 
 class SentAttNet(nn.Module):
-    def __init__(self, sent_hidden_size=50, word_hidden_size=50, num_classes=14):
+    def __init__(self, sent_hidden_size=50, word_hidden_size=50):
         super(SentAttNet, self).__init__()
         self.sent_weight = nn.Parameter(torch.Tensor(2 * sent_hidden_size, 2 * sent_hidden_size))
         self.sent_bias = nn.Parameter(torch.Tensor(1, 2 * sent_hidden_size))
