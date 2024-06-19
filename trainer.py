@@ -23,6 +23,8 @@ from const import *
 from hyptorch.geoopt import PoincareBall, Euclidean
 from hyptorch.lorentz.manifold import CustomLorentz 
 from accelerate import Accelerator
+import pathlib
+
 
 accelerator = Accelerator()
 class Trainer:
@@ -43,9 +45,9 @@ class Trainer:
     ):
         self.lr = lr
         self.model_type = model_type
-        self.max_sen_len = max_sen_len
         self.max_sents = max_sents
         self.max_coms = max_coms
+        self.max_sen_len = max_sen_len
         self.max_com_len = max_com_len
         self.metrics = Metrics()
         self.fourier = fourier
@@ -238,6 +240,19 @@ class Trainer:
             encoded_texts[i][:len(encoded_text)] = encoded_text
         return encoded_texts
 
+        
+    def save_results(self, f1, prec, rec, acc):
+        file_name = f'{self.platform}.csv'
+        path = f'{os.getcwd()}/results/{file_name}'
+        if not pathlib.Path(path).is_file():
+            head = "model,manifold,fourier,max_coms,max_sents,max_sen_len,max_com_len,embedding_dim,f1,prec,rec,acc\n"
+            with open(file_name, "a") as myfile:
+                myfile.write(head)
+        row = f'{self.model_type},{self.manifold},{self.fourier},{self.max_coms},{self.max_sents},{self.max_sen_len},{self.max_com_len},{self.embedding_dim},{f1},{prec},{rec},{acc}'
+        with open(file_name, "a") as myfile:
+            myfile.write(row)
+
+
     def train(
         self,
         train_x,
@@ -282,7 +297,6 @@ class Trainer:
         # adding self loops in the dgl graphs
         train_c = [dgl.add_self_loop(i) for i in train_c]
         val_c = [dgl.add_self_loop(i) for i in val_c]
-
         train_dataset = FakeNewsDataset(
             content=encoded_train_x,
             comment=encoded_train_c,
@@ -312,7 +326,6 @@ class Trainer:
             shuffle=True,
             drop_last=True,
         )
-
         self.dataset_sizes = {
             "train": train_dataset.__len__(),
             "val": val_dataset.__len__(),
@@ -320,7 +333,6 @@ class Trainer:
         train_loader, val_loader = accelerator.prepare(train_loader, val_loader) 
         self.dataloaders = {"train": train_loader, "val": val_loader}
         print("Dataset prepared.")
-        
         self.run_epoch(epochs)
         
     def run_epoch(self, epochs):
@@ -333,6 +345,7 @@ class Trainer:
         best_f1 = 0.0
         best_precision = 0.0
         best_recall = 0.0
+        best_acc = 0.0
 
         for epoch in range(epochs):
             print("Epoch {}/{}".format(epoch, epochs - 1))
@@ -389,20 +402,18 @@ class Trainer:
                     )  # As and Ac are the attention weights we are returning
                 te_loss = self.criterion(predictions, label)
                 loss_ls.append(te_loss * num_sample)
-
                 _, predictions = torch.max(torch.softmax(predictions, dim=-1), 1)
                 _, label = torch.max(label, 1)
-
                 predictions = predictions.detach().cpu().numpy()
                 label = label.detach().cpu().numpy()
 
                 self.metrics.on_batch_end(epoch, i, predictions, label)
 
-            acc_, f1 = self.metrics.on_epoch_end(epoch)
+            acc, f1, prec, rec = self.metrics.on_epoch_end(epoch)
             if f1 > best_f1:
                 print(f"Best F1: {f1}")
                 print("Saving best model!")
-                self.log({'epoch':epoch, 'best F1': f1, 'best precision': best_precision, 'best recall': best_recall})
+                self.log({'epoch':epoch, 'best F1': f1, 'best precision': prec, 'best recall': rec})
                 dst_dir = f"saved_models/{self.platform}/"
                 os.makedirs(dst_dir, exist_ok=True)
                 torch.save(
@@ -410,12 +421,15 @@ class Trainer:
                 )
                 self.best_model = self.model
                 best_f1 = f1
+                best_precision = prec 
+                best_recall = rec 
+                best_acc = acc 
 
             te_loss = sum(loss_ls) / total_samples
             self.log({
                 "Test/epoch": epoch,
                 "Test/Loss": te_loss,
-                "Test/Accuracy": acc_,
+                "Test/Accuracy": acc,
                 "Test/F1": f1,
                 
             })
@@ -423,9 +437,11 @@ class Trainer:
 
 
         print(f"Best F1: {best_f1}")
+        self.save_results(best_f1, best_recall, best_precision, best_acc)
         print(f"Training time: {training_time}")
         print("Training  end")
         print("-" * 100)
+
 
     def process_atten_weight(
         self, encoded_text, content_word_level_attentions, sentence_co_attention

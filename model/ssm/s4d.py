@@ -222,10 +222,8 @@ class SSM4RC(nn.Module):
 
 
     def forward(self, content, comment):
-        
         content_embedding = self.content_encoder(content)
         comment_embedding = self.content_encoder(comment)
         coatten, As, Ac = self.coattention(content_embedding, comment_embedding)
         preds = self.fc(coatten)
         return preds, As, Ac
-     

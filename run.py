@@ -4,7 +4,7 @@ import pickle
 import argparse
 parser = argparse.ArgumentParser()
 # from LorentzTrainer import Trainer as LorentzTrainer
-from Trainer import Trainer 
+from trainer import Trainer 
 from const import * 
 import pandas as pd
 
