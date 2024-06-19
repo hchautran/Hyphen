@@ -56,8 +56,6 @@ class CoAttention(nn.Module):
             x_norm = torch.norm(x, dim=-1, keepdim=True) + 1e-5
             fac = torch.minimum(torch.ones_like(x_norm), self.clip_r / x_norm)
             x = x * fac
-        
-        x = F.pad(x, (1,0), "constant", 0)
         out = self.manifold.expmap0(x)
         return out 
 
@@ -68,14 +66,14 @@ class CoAttention(nn.Module):
         # self.poincare.assert_check_point_on_manifold(comment_rep)
         # self.poincare.assert_check_point_on_manifold(sentence_rep)
 
-        curv = 1.0 
         if self.fourier:
             # KFU
+            sentence_rep = self.manifold.logmap0(comment_rep)
             assert not torch.isnan(sentence_rep).any(), "sentence is nan before fft2"
             sentence_rep = torch.fft.fft2(sentence_rep).float()
             assert not torch.isnan(sentence_rep).any(), "sentence is nan after fft2"
 
-            comment_rep = self.poincare.logmap0(comment_rep)
+            comment_rep = self.manifold.logmap0(comment_rep)
             assert not torch.isnan(comment_rep).any(), "comment is nan before fft2"
             comment_rep = torch.fft.fft2(comment_rep).float()
             assert not torch.isnan(comment_rep).any(), "comment is nan after fft2"
@@ -83,8 +81,8 @@ class CoAttention(nn.Module):
             lorentz_sentence_rep = self.euclid_to_lorentz(sentence_rep)
             lorentz_comment_rep = self.euclid_to_lorentz(comment_rep) 
         else:
-            lorentz_sentence_rep = lmath.poincare_to_lorentz(sentence_rep, k=curv)
-            lorentz_comment_rep = lmath.poincare_to_lorentz(comment_rep, k=curv)
+            lorentz_sentence_rep = sentence_rep
+            lorentz_comment_rep = comment_rep
 
 
         L = self.Wl(lorentz_comment_rep)

@@ -24,6 +24,7 @@ parser.add_argument('--epochs', type = int, default= 100, help='The number of ep
 parser.add_argument('--model', type = str, default= HYPHEN, help='model type')
 parser.add_argument('--enable-log', action='store_true', default=False , help='log to wandb')
 parser.add_argument('--embedding-dim', default=100, help='embedding dim')
+parser.add_argument('--curv', default=1.0, help='curvature')
 
 args = parser.parse_args()
 
@@ -50,7 +51,7 @@ model = Trainer(
     max_coms=args.max_coms, 
     lr = args.lr, 
     fourier = args.no_fourier,
-    curv=1.0,
+    curv=args.curv,
     enable_log=args.enable_log,
     embedding_dim=int(args.embedding_dim)
 )

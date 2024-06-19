@@ -54,6 +54,7 @@ class Trainer:
         self.platform = platform
         self.embedding_dim = embedding_dim 
         self.device = accelerator.device 
+        self.manifold_name = manifold
 
         if manifold == EUCLID:
             self.manifold = Euclidean()
@@ -63,19 +64,7 @@ class Trainer:
             self.manifold = CustomLorentz(k=curv)
      
         self.log_enable = enable_log 
-        if self.log_enable:
-            wandb.init(
-                project=platform,
-                name=f'{self.model_type}_{self.embedding_dim}_{manifold}',
-                config={
-                    'type': self.model_type,
-                    'manifold': manifold,
-                    'embedding_dim': self.embedding_dim,
-                    'max_sents': self.max_sents,
-                    'max_coms': self.max_coms,
-                    'fourier': self.fourier
-                }
-            )
+
         print('using manifold ',  manifold)
         print('using fourier',  fourier)
 
@@ -144,7 +133,7 @@ class Trainer:
                 max_comment_count=self.max_coms,
                 fourier=self.fourier,
             )
-        else:
+        elif isinstance(self.manifold, Euclidean):
             model = EuclidHyphen(
                 manifold=self.manifold,
                 embedding_matrix=embedding_matrix,
@@ -159,6 +148,8 @@ class Trainer:
                 max_comment_count=self.max_coms,
                 fourier=self.fourier,
             )
+        else: 
+            raise RuntimeError("Does not support lorentz")
             
         print(f"{self.model_type} built")
 
@@ -241,15 +232,15 @@ class Trainer:
         return encoded_texts
 
         
-    def save_results(self, f1, prec, rec, acc):
+    def save_results(self, f1, prec, rec, acc,train_time, eval_time):
         file_name = f'{self.platform}.csv'
         path = f'{os.getcwd()}/results/{file_name}'
         if not pathlib.Path(path).is_file():
-            head = "model,manifold,fourier,max_coms,max_sents,max_sen_len,max_com_len,embedding_dim,f1,prec,rec,acc\n"
-            with open(file_name, "a") as myfile:
+            head = "model,manifold,fourier,max_coms,max_sents,max_sen_len,max_com_len,embedding_dim,f1,prec,rec,acc,train time,eval time\n"
+            with open(path, "a") as myfile:
                 myfile.write(head)
-        row = f'{self.model_type},{self.manifold},{self.fourier},{self.max_coms},{self.max_sents},{self.max_sen_len},{self.max_com_len},{self.embedding_dim},{f1},{prec},{rec},{acc}'
-        with open(file_name, "a") as myfile:
+        row = f'{self.model_type},{self.manifold_name},{self.fourier},{self.max_coms},{self.max_sents},{self.max_sen_len},{self.max_com_len},{self.embedding_dim},{f1},{prec},{rec},{acc},{train_time},{eval_time}\n'
+        with open(path, "a") as myfile:
             myfile.write(row)
 
 
@@ -281,8 +272,19 @@ class Trainer:
         self.model = accelerator.prepare(self.model) 
         self.optimizer = RiemannianAdam(self.model.parameters(), lr=self.lr)
         self.optimizer = accelerator.prepare(self.optimizer)
-        # self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, mode='max', patience=10)
-        # self.optimizer, self.scheduler = accelerator.prepare(self.optimizer, self.scheduler)
+        if self.log_enable:
+            wandb.init(
+                project=self.platform,
+                name=f'{self.model_type}_{self.embedding_dim}_{self.manifold_name}',
+                config={
+                    'type': self.model_type,
+                    'manifold': self.manifold_name,
+                    'embedding_dim': self.embedding_dim,
+                    'max_sents': self.max_sents,
+                    'max_coms': self.max_coms,
+                    'fourier': self.fourier
+                }
+            )
 
         self.criterion = nn.CrossEntropyLoss()
 
@@ -384,6 +386,8 @@ class Trainer:
                     "Train/Accuracy":training_metrics["accuracy"],
                 })
 
+            train_time = time.time() - start
+            start = time.time()
             self.model.eval()
             loss_ls = []
             total_samples = 0
@@ -410,6 +414,7 @@ class Trainer:
                 self.metrics.on_batch_end(epoch, i, predictions, label)
 
             acc, f1, prec, rec = self.metrics.on_epoch_end(epoch)
+            eval_time= time.time() - start
             if f1 > best_f1:
                 print(f"Best F1: {f1}")
                 print("Saving best model!")
@@ -433,12 +438,10 @@ class Trainer:
                 "Test/F1": f1,
                 
             })
-        training_time = time.time() - start
 
 
         print(f"Best F1: {best_f1}")
-        self.save_results(best_f1, best_recall, best_precision, best_acc)
-        print(f"Training time: {training_time}")
+        self.save_results(best_f1, best_recall, best_precision, best_acc, train_time, eval_time)
         print("Training  end")
         print("-" * 100)
 

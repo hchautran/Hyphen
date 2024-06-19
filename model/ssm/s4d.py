@@ -129,11 +129,18 @@ class S4DEnc(nn.Module):
 
         output = torch.stack(output_list, dim=0)
         x = self.sent_ssm(output)
-        if not isinstance(self.manifold, Euclidean):
+        if isinstance(self.manifold, PoincareBall):
             clip_r = 2.0 
             x_norm = torch.norm(x, dim=-1, keepdim=True) + 1e-5
             fac = torch.minimum(torch.ones_like(x_norm), clip_r/ x_norm)
             x = x * fac
+            output = self.manifold.expmap0(x)
+        elif isinstance(self.manifold, CustomLorentz):
+            clip_r = 2.0 
+            x_norm = torch.norm(x, dim=-1, keepdim=True) + 1e-5
+            fac = torch.minimum(torch.ones_like(x_norm), clip_r/ x_norm)
+            x = x * fac
+            x = F.pad(x, (1,0), "constant", 0)
             output = self.manifold.expmap0(x)
 
         return output 

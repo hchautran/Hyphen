@@ -1,0 +1,2 @@
+model,manifold,fourier,max_coms,max_sents,max_sen_len,max_com_len,embedding_dim,f1,prec,rec,acc,train time,eval time
+ssm4rc,lorentz,True,30,30,20,20,200,0.9375,0.9375,0.9375,0.9375,4.040910243988037,0.17015290260314941
