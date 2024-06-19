@@ -25,8 +25,6 @@ class Hyphen(nn.Module):
         embedding_dim = 100, 
         latent_dim = 100, 
         graph_glove_dim = 100, 
-        content_module =True, 
-        comment_module = True, 
         fourier = False, 
     ):
 
@@ -44,8 +42,6 @@ class Hyphen(nn.Module):
         self.sent_hidden_size = sent_hidden_size
         self.graph_hidden = graph_hidden
         self.manifold = manifold 
-        self.comment_module = comment_module
-        self.content_module = content_module 
         print('building HypPostEnc')
         self.content_encoder= PostEnc(
             word_hidden_size=self.word_hidden_size, 

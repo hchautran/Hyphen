@@ -36,34 +36,22 @@ class Trainer:
         max_sents,
         max_coms,
         lr,
-        content_module,
-        comment_module,
         fourier,
         curv=1.0,
         enable_log=False,
         embedding_dim=100,
     ):
+        self.lr = lr
         self.model_type = model_type
-        self.model = None
         self.max_sen_len = max_sen_len
         self.max_sents = max_sents
         self.max_coms = max_coms
         self.max_com_len = max_com_len
-        self.vocab_size = 0
-        self.word_embedding = None
-        self.model = None
-        self.word_attention_model = None
-        self.sentence_comment_co_model = None
-        self.tokenizer = None
         self.metrics = Metrics()
-        self.device = accelerator.device 
-
-        self.lr = lr
-        self.content_module = content_module
-        self.comment_module = comment_module
         self.fourier = fourier
         self.platform = platform
-        self.embedding_dim=embedding_dim 
+        self.embedding_dim = embedding_dim 
+        self.device = accelerator.device 
 
         if manifold == EUCLID:
             self.manifold = Euclidean()
@@ -86,6 +74,8 @@ class Trainer:
                     'fourier': self.fourier
                 }
             )
+        print('using manifold ',  manifold)
+        print('using fourier',  fourier)
 
     def log(self, stats):
         if self.log_enable:
@@ -150,8 +140,6 @@ class Trainer:
                 batch_size=batch_size,
                 num_classes=n_classes,
                 max_comment_count=self.max_coms,
-                comment_module=self.comment_module,
-                content_module=self.content_module,
                 fourier=self.fourier,
             )
         else:
@@ -167,17 +155,10 @@ class Trainer:
                 batch_size=batch_size,
                 num_classes=n_classes,
                 max_comment_count=self.max_coms,
-                comment_module=self.comment_module,
-                content_module=self.content_module,
                 fourier=self.fourier,
             )
             
         print(f"{self.model_type} built")
-        model = accelerator.prepare(model) 
-
-        self.optimizer = RiemannianAdam(model.parameters(), lr=self.lr)
-        self.optimizer = accelerator.prepare(self.optimizer)
-        self.criterion = nn.CrossEntropyLoss()
 
         return model
 
@@ -228,21 +209,12 @@ class Trainer:
             graph_hidden=self.graph_hidden,
             batch_size=batch_size,
             num_classes=n_classes,
-            comment_module=self.comment_module,
-            content_module=self.content_module,
             fourier=self.fourier,
         )
-        self.optimizer = RiemannianAdam(model.parameters(), lr=self.lr)
-        print(f"{self.model_type} built")
-        model = accelerator.prepare(model) 
 
-        self.optimizer = accelerator.prepare(self.optimizer)
-        self.criterion = nn.CrossEntropyLoss()
+        print(f"{self.model_type} built")
 
         return model
-
-        
-        
 
     def _encode_texts(self, texts, max_sents, max_sen_len):
         """
@@ -282,123 +254,6 @@ class Trainer:
         epochs=5,
     ):
 
-        self.tokenizer = pickle.load(open("tokenizer.pkl", "rb"))
-        print("Building model....")
-        if self.model_type == HYPHEN:
-            self.model = self._build_hyphen(
-                n_classes=train_y.shape[-1], batch_size=batch_size
-            )
-        else:
-            self.model = self._build_ssm4rc(
-                n_classes=train_y.shape[-1], batch_size=batch_size
-            )
-        print("Model built.")
-
-        print("Encoding texts....")
-        # Create encoded input for content and comments
-        encoded_train_x = self._encode_texts(train_x)
-        encoded_val_x = self._encode_texts(val_x)
-        encoded_train_c = self._encode_texts(train_raw_c, self.max_coms, self.max_com_len)
-        encoded_val_c = self._encode_texts(val_raw_c, self.max_coms, self.max_com_len)
-        print("preparing dataset....")
-
-        # adding self loops in the dgl graphs
-        train_c = [dgl.add_self_loop(i) for i in train_c]
-        val_c = [dgl.add_self_loop(i) for i in val_c]
-
-
-        train_dataset = FakeNewsDataset(
-            encoded_train_x,
-            encoded_train_c,
-            train_c,
-            train_y,
-            sub_train,
-        )
-        val_dataset = FakeNewsDataset(
-            encoded_val_x,
-            encoded_val_c,
-            val_c,
-            val_y,
-            sub_val,
-        )
-
-        train_loader = DataLoader(
-            train_dataset,
-            batch_size=batch_size,
-            collate_fn=train_dataset.collate_fn,
-            shuffle=True,
-            drop_last=True,
-        )
-        val_loader = DataLoader(
-            val_dataset,
-            batch_size=batch_size,
-            collate_fn=val_dataset.collate_fn,
-            shuffle=True,
-            drop_last=True,
-        )
-
-        self.dataset_sizes = {
-            "train": train_dataset.__len__(),
-            "val": val_dataset.__len__(),
-        }
-        self.dataloaders = {"train": train_loader, "val": val_loader}
-        print("Dataset prepared.")
-
-        self.model.load_state_dict(
-            torch.load(f"saved_models/{self.platform}/best_model_{self.manifold}.pt")
-        )
-
-        print("Loaded state dict")
-
-        self.model.eval()
-        loss_ls = []
-        total_samples = 0
-        As_batch, Ac_batch, predictions_batch = [], [], []
-        for i, sample in enumerate(self.dataloaders["val"]):
-            content, comment, comment_graph ,label, subgraphs = sample
-            num_sample = len(label)  # last batch size
-            total_samples += num_sample
-
-
-            self.model.content_encoder._init_hidden_state(num_sample)
-
-            if self.model_type == HYPHEN:
-                self.model.content_encoder._init_hidden_state(len(label))
-                predictions,As,Ac = self.model(
-                    content=content, comment=comment_graph, subgraphs=subgraphs
-                )
-            else:
-                predictions,As,Ac = self.model(
-                    content=content, comment=comment
-                )  # As and Ac are the attention weights we
-
-            te_loss = self.criterion(predictions, label)
-            loss_ls.append(te_loss * num_sample)
-
-            _, predictions = torch.max(torch.softmax(predictions, dim=-1), 1)
-            _, label = torch.max(label, 1)
-
-            As_batch.extend(As.detach().cpu().numpy())
-            Ac_batch.extend(Ac.detach().cpu().numpy())
-            predictions_batch.extend(predictions.detach().cpu().numpy())
-        return predictions_batch, As_batch, Ac_batch
-
-    def train(
-        self,
-        train_x,
-        train_raw_c,
-        train_y,
-        train_c,
-        val_c,
-        val_raw_c,
-        val_y,
-        val_x,
-        sub_train,
-        sub_val,
-        batch_size=9,
-        epochs=5,
-    ):
-
         # Fit the vocabulary set on the content and comments
         self._fit_on_texts()
 
@@ -407,6 +262,14 @@ class Trainer:
             self.model = self._build_hyphen(n_classes=train_y.shape[-1], batch_size=batch_size)
         else:
             self.model = self._build_ssm4rc(n_classes=train_y.shape[-1], batch_size=batch_size)
+
+        self.model = accelerator.prepare(self.model) 
+        self.optimizer = RiemannianAdam(self.model.parameters(), lr=self.lr)
+        self.optimizer = accelerator.prepare(self.optimizer)
+        # self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, mode='max', patience=10)
+        # self.optimizer, self.scheduler = accelerator.prepare(self.optimizer, self.scheduler)
+
+        self.criterion = nn.CrossEntropyLoss()
 
         print("Encoding texts....")
         # Create encoded input for content and comments
@@ -459,20 +322,17 @@ class Trainer:
         print("Dataset prepared.")
         
         self.run_epoch(epochs)
-
         
     def run_epoch(self, epochs):
         """
         Function to train model for given epochs
         """
 
-        since = time.time()
-        clip = 5  # modify clip
+        start = time.time()
 
         best_f1 = 0.0
         best_precision = 0.0
         best_recall = 0.0
-        best_acc = 0.0
 
         for epoch in range(epochs):
             print("Epoch {}/{}".format(epoch, epochs - 1))
@@ -559,8 +419,11 @@ class Trainer:
                 "Test/F1": f1,
                 
             })
+        training_time = time.time() - start
+
 
         print(f"Best F1: {best_f1}")
+        print(f"Training time: {training_time}")
         print("Training  end")
         print("-" * 100)
 

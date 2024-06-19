@@ -23,8 +23,6 @@ class Hyphen(nn.Module):
         embedding_dim = 100, 
         latent_dim = 100, 
         graph_glove_dim = 100, 
-        content_module =True, 
-        comment_module = True, 
         fourier = False, 
     ):
 
@@ -42,8 +40,6 @@ class Hyphen(nn.Module):
         self.word_hidden_size = word_hidden_size
         self.sent_hidden_size = sent_hidden_size
         self.graph_hidden = graph_hidden
-        self.comment_module = comment_module
-        self.content_module = content_module 
         print('building HypPostEnc')
         self.comment_encoder = ComEnc(
             in_dim=self.word_hidden_size, 
@@ -62,9 +58,7 @@ class Hyphen(nn.Module):
         print('building CoAttention')
         self.coattention = CoAttention(latent_dim=latent_dim, embedding_dim=embedding_dim ,fourier = self.fourier)
         
-        if self.comment_module and self.content_module: self.fc = nn.Linear(2*latent_dim, num_classes)
-        elif self.comment_module: self.fc = nn.Linear(latent_dim, num_classes)
-        else: self.fc = nn.Linear(2*self.sent_hidden_size, num_classes)
+        self.fc = nn.Linear(2*latent_dim, num_classes)
 
     def forward(self, content, comment, subgraphs):
         

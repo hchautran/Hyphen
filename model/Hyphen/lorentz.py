@@ -26,8 +26,6 @@ class Hyphen(nn.Module):
         embedding_dim = 100, 
         latent_dim = 100, 
         graph_glove_dim = 100, 
-        content_module =True, 
-        comment_module = True, 
         fourier = False
     ):
 
@@ -49,8 +47,6 @@ class Hyphen(nn.Module):
         self.graph_hidden = graph_hidden
         self.manifold = CustomLorentz(k=1.0) 
         self.poincare = PoincareBall(c=self.manifold.k.item())
-        self.comment_module = comment_module
-        self.content_module = content_module 
         print('building HypPostEnc')
         self.content_encoder= PostEnc(
             word_hidden_size=self.word_hidden_size, 
@@ -70,7 +66,6 @@ class Hyphen(nn.Module):
             max_comment_count=self.max_comment_count, 
             device=self.device, 
             manifold=self.poincare, 
-            content_module=self.content_module, 
             comment_curvature=self.manifold.k.item()
         )
         print('building CoAttention')
