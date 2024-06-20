@@ -37,7 +37,7 @@ class CoAttention(nn.Module):
         self.concat_m1 = nn.Parameter(torch.Tensor((1, 1)))
         self.concat_m2 = nn.Parameter(torch.Tensor((1, 1)))
         self.concat_b = nn.Parameter(torch.Tensor((1, self.latent_dim)))
-        self.act = LorentzAct(manifold=self.manifold, activation=nn.GELU()) 
+        self.act = LorentzAct(manifold=self.manifold, activation=nn.Tanh()) 
         
 
         self.register_parameter("whs", self.whs)
@@ -56,19 +56,17 @@ class CoAttention(nn.Module):
             x_norm = torch.norm(x, dim=-1, keepdim=True) + 1e-5
             fac = torch.minimum(torch.ones_like(x_norm), self.clip_r / x_norm)
             x = x * fac
+        # x = F.pad(x, (1,0), "constant", 0)
         out = self.manifold.expmap0(x)
         return out 
 
  
 
     def forward(self, sentence_rep:torch.Tensor, comment_rep:torch.Tensor):
-        """This function will return the shape [batch_size, embedding_dim]."""
-        # self.poincare.assert_check_point_on_manifold(comment_rep)
-        # self.poincare.assert_check_point_on_manifold(sentence_rep)
 
         if self.fourier:
             # KFU
-            sentence_rep = self.manifold.logmap0(comment_rep)
+            sentence_rep = self.manifold.logmap0(sentence_rep)
             assert not torch.isnan(sentence_rep).any(), "sentence is nan before fft2"
             sentence_rep = torch.fft.fft2(sentence_rep).float()
             assert not torch.isnan(sentence_rep).any(), "sentence is nan after fft2"
@@ -87,31 +85,27 @@ class CoAttention(nn.Module):
 
         L = self.Wl(lorentz_comment_rep)
         L = self.act(lorentz_sentence_rep @ L.transpose(-1, -2))
-        assert not torch.isnan(L).any(), "L is nan"
 
-        # Hs = torch.tanh(torch.matmul(self.Ws, sentence_rep_trans) + torch.matmul(torch.matmul(self.Wc, comment_rep_trans), L))
         Hs_a = self.Ws(lorentz_sentence_rep) 
         Hs_b = self.Wc(lorentz_comment_rep)
-
         Hs_b = lmath.lorentz_to_poincare(Hs_b, k=self.manifold.k)
         Hs_a = lmath.lorentz_to_poincare(Hs_a, k=self.manifold.k)
-        # print(Hs_b.shape)
-
         Hs_b = self.poincare.mobius_matvec(Hs_b.transpose(-1,-2), L)
-
         Hs = self.poincare.mobius_add(Hs_a, Hs_b)
-        Hs = self.poincare.expmap0(F.tanh(self.poincare.logmap0(Hs)))  # [32, 80, 50]
+        Hs = self.act(lmath.poincare_to_lorentz(Hs, self.manifold.k))  # [32, 80, 50]
 
         # Hc = torch.tanh(torch.matmul(self.Wc, comment_rep_trans)+ torch.matmul(torch.matmul(self.Ws, sentence_rep_trans), L_trans))
         Hc_a = self.Wc(lorentz_comment_rep)
         Hc_b = self.Ws(lorentz_sentence_rep)
-
         Hc_b = lmath.lorentz_to_poincare(Hc_b, k=self.manifold.k)
         Hc_a = lmath.lorentz_to_poincare(Hc_a, k=self.manifold.k)
-
         Hc_b = self.poincare.mobius_matvec(Hc_b.transpose(-1,-2), L.transpose(-1, -2))
         Hc = self.poincare.mobius_add(Hc_a.transpose(-1,-2), Hc_b.transpose(-1,-2))
-        Hc = self.poincare.expmap0(F.tanh(self.poincare.logmap0(Hc)))  # [32, 80, 10]
+        Hc = self.act(lmath.poincare_to_lorentz(Hc, self.manifold.k))  # [32, 80, 10]
+
+
+        Hs = lmath.lorentz_to_poincare(Hs, self.manifold.k)
+        Hc = lmath.lorentz_to_poincare(Hc, self.manifold.k)
 
         As = self.poincare.mobius_matvec(self.whs, Hs) 
         As = F.softmax(As.transpose(-1, -2), dim=-1)
@@ -130,6 +124,7 @@ class CoAttention(nn.Module):
         assert not torch.isnan(co_c).any(), "co_c is nan"
 
         co_sc = self.manifold.concat(co_s, co_c)
+
         co_sc = torch.squeeze(co_sc)
 
         assert not torch.isnan(co_sc).any(), "co_sc is nan"
