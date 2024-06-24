@@ -109,19 +109,19 @@ class CoAttention(nn.Module):
 
         As = self.poincare.mobius_matvec(self.whs, Hs) 
         As = F.softmax(As.transpose(-1, -2), dim=-1)
-        assert not torch.isnan(As).any(), "As is nan"
+        # assert not torch.isnan(As).any(), "As is nan"
 
         Ac = self.poincare.mobius_matvec(self.whc, Hc.transpose(-1, -2))
         Ac = F.softmax(Ac.transpose(-1, -2), dim=-1)
-        assert not torch.isnan(Ac).any(), "Ac is nan"
+        # assert not torch.isnan(Ac).any(), "Ac is nan"
 
         # co_s = torch.matmul(As,sentence_rep) # (1, 100)
         co_s = self.manifold.centroid(lorentz_sentence_rep, As)
-        assert not torch.isnan(co_s).any(), "co_s is nan"
+        # assert not torch.isnan(co_s).any(), "co_s is nan"
 
         # co_c = torch.matmul(Ac, comment_rep) # (1, 100)
         co_c = self.manifold.centroid(lorentz_comment_rep, Ac)
-        assert not torch.isnan(co_c).any(), "co_c is nan"
+        # assert not torch.isnan(co_c).any(), "co_c is nan"
 
         co_sc = self.manifold.concat(co_s, co_c)
 

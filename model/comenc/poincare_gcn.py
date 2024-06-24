@@ -11,11 +11,9 @@ class ComEnc(nn.Module):
         self,
         in_dim,
         hidden_dim,
-        n_classes,
         max_comment_count,
         device,
         manifold,
-        content_module,
     ):
         super(ComEnc, self).__init__()
         self.manifold = manifold
@@ -43,7 +41,6 @@ class ComEnc(nn.Module):
         self.max_comment_count = max_comment_count
         self.hidden_dim = hidden_dim
         self.device = device
-        self.content_module = content_module
 
     def forward(self, g, h, subgraphs):
         """returned shape will be [batch_size, max_comments, embedding_size] i.e.
@@ -65,37 +62,29 @@ class ComEnc(nn.Module):
         h = out  # converting back to dense
         h = self.manifold.logmap0(h)
         # map h (which is in poincare space/euclidean) to tangential space to aggregate the node representations
-        if self.content_module:
-            with g.local_scope():
-                g.ndata["h"] = h
-                # Calculate graph representation by average readout.
-                unbatched = dgl.unbatch(g)
-                batch_agg = []
-                for batch_idx in range(len(unbatched)):
-                    agg = []
-                    for node_list in subgraphs[batch_idx]:
-                        sub = dgl.node_subgraph(unbatched[batch_idx], node_list)
-                        hg = dgl.mean_nodes(sub, "h")
-                        agg.append(torch.squeeze(hg).unsqueeze(0))
-                    if len(agg) >= self.max_comment_count:
-                        agg = agg[: self.max_comment_count]
-                        agg = torch.cat([i.float() for i in agg], dim=0)
-                    else:
-                        padding = torch.zeros(
-                            (self.max_comment_count - len(agg), self.hidden_dim),
-                            dtype=torch.float32,
-                            requires_grad=True,
-                        ).to(self.device)
-                        without_padding = torch.cat([i.float() for i in agg], dim=0)
-                        agg = torch.cat([without_padding, padding], dim=0)
-                    agg = self.manifold.expmap0(agg)
-                    batch_agg.append(agg.unsqueeze(0))
-                ret = torch.cat(batch_agg, dim=0)
-                return ret
-
-        else:
-            with g.local_scope():
-                g.ndata["h"] = h
-                ret = dgl.mean_nodes(g, "h")
-                ret = self.manifold.expmap0(ret)
-                return ret
+        with g.local_scope():
+            g.ndata["h"] = h
+            # Calculate graph representation by average readout.
+            unbatched = dgl.unbatch(g)
+            batch_agg = []
+            for batch_idx in range(len(unbatched)):
+                agg = []
+                for node_list in subgraphs[batch_idx]:
+                    sub = dgl.node_subgraph(unbatched[batch_idx], node_list)
+                    hg = dgl.mean_nodes(sub, "h")
+                    agg.append(torch.squeeze(hg).unsqueeze(0))
+                if len(agg) >= self.max_comment_count:
+                    agg = agg[: self.max_comment_count]
+                    agg = torch.cat([i.float() for i in agg], dim=0)
+                else:
+                    padding = torch.zeros(
+                        (self.max_comment_count - len(agg), self.hidden_dim),
+                        dtype=torch.float32,
+                        requires_grad=True,
+                    ).to(self.device)
+                    without_padding = torch.cat([i.float() for i in agg], dim=0)
+                    agg = torch.cat([without_padding, padding], dim=0)
+                agg = self.manifold.expmap0(agg)
+                batch_agg.append(agg.unsqueeze(0))
+            ret = torch.cat(batch_agg, dim=0)
+            return ret

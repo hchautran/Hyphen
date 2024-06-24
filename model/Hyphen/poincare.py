@@ -56,11 +56,9 @@ class Hyphen(nn.Module):
         self.comment_encoder = ComEnc(
             in_dim=self.graph_glove_dim, 
             hidden_dim=self.graph_hidden, 
-            n_classes=num_classes, 
             max_comment_count=self.max_comment_count, 
             device=self.device, 
             manifold=self.manifold, 
-            content_module=self.content_module, 
         )
         print('building CoAttention')
         self.coattention = CoAttention(
