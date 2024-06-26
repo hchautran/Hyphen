@@ -1,0 +1,2 @@
+model,manifold,fourier,max_coms,max_sents,max_sen_len,max_com_len,embedding_dim,f1,prec,rec,acc,train time,eval time
+hyphen,poincare,True,30,30,20,20,200,0.6541666666666666,0.65625,0.66015625,0.65625,45.22111988067627,2.4173126220703125
