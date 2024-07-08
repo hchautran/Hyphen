@@ -75,15 +75,4 @@ model.train(
 )
 
 
-#create pytorch profile class to benchmark the model
-class Benchmark:
-    def __init__(self, model):
-        self.model = model
 
-    def profile_model(self, input_data):
-        with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], record_shapes=True) as prof:
-            with record_function("model_inference"):
-                self.model(input_data)
-        print(prof.key_averages().table(sort_by="self_cpu_time_total", row_limit=10))
-    
-    
