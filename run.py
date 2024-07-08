@@ -7,6 +7,8 @@ parser = argparse.ArgumentParser()
 from trainer import Trainer 
 from const import * 
 import pandas as pd
+import torch
+from torch.profiler import profile, record_function, ProfilerActivity
 
 parser.add_argument('--manifold', choices=[EUCLID, LORENTZ, POINCARE], default = POINCARE, help='Choose the underlying manifold for Hyphen')
 parser.add_argument('--no-fourier', default=True, action='store_false', help='If you want to remove the Fourier sublayer from Hyphen\'s co-attention module.')
@@ -71,3 +73,17 @@ model.train(
     batch_size=args.batch_size, 
     epochs=args.epochs
 )
+
+
+#create pytorch profile class to benchmark the model
+class Benchmark:
+    def __init__(self, model):
+        self.model = model
+
+    def profile_model(self, input_data):
+        with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], record_shapes=True) as prof:
+            with record_function("model_inference"):
+                self.model(input_data)
+        print(prof.key_averages().table(sort_by="self_cpu_time_total", row_limit=10))
+    
+    

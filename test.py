@@ -4,9 +4,6 @@ from hyptorch.geoopt.manifolds.stereographic.math import mobius_add, mobius_matv
 from hyptorch.geoopt.manifolds.lorentz import math as lmath
 from hyptorch.lorentz.manifold import CustomLorentz
 from hyptorch.lorentz.layers.LAttn import CrossAttention 
-from utils.manifolds import PoincareBall
-from lorentz_coattention import CoAttention 
-from coattention import CoAttention 
 from transformers import CLIPTextConfig 
 
 
@@ -22,6 +19,16 @@ def lorentz_addition(x, y):
     return lmath.poincare_to_lorentz(mobius_add(x_p, y_p, k=manifold.k),k=manifold.k)
 
 def direct_add(x, y):
+    """
+    Adds two tensors after narrowing them.
+
+    Args:
+        x (torch.Tensor): The first tensor.
+        y (torch.Tensor): The second tensor.
+
+    Returns:
+        torch.Tensor: The result of adding the narrowed tensors.
+    """
     x = x.narrow(-1, 1, y.shape[-1] - 1) + y.narrow(
         -1, 1, y.shape[-1] - 1
     )

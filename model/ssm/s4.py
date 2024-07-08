@@ -1961,3 +1961,5 @@ class S4Block(nn.Module):
     @property
     def d_output(self):
         return self.d_model
+
+        
