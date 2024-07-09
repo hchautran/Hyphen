@@ -14,6 +14,8 @@ from model.utils.metrics import Metrics
 from model.Hyphen.poincare import Hyphen as PoincareHyphen
 from model.Hyphen.euclidean import Hyphen as EuclidHyphen
 from model.ssm.hs4 import SSM4RC 
+from model.bert.bert import HBert 
+from model.Han.Han import Han
 from model.utils.dataset import FakeNewsDataset
 from model.utils.utils import get_evaluation
 import wandb
@@ -209,6 +211,109 @@ class Trainer:
 
         return model
 
+    def _build_han(self, n_classes=2, batch_size=12):
+        embeddings_index = {}
+
+        self.glove_dir = f"{DATA_PATH}/glove.twitter.27B.{self.embedding_dim}d.txt"
+        # self.glove_dir = f"{DATA_PATH}/poincare_glove_100D_cosh-dist-sq_init_trick.txt"
+
+        f = open(self.glove_dir, encoding="utf-8")
+
+        for line in f:
+            values = line.split()
+            word = values[0]
+            coefs = np.asarray(values[1:], dtype="float32")
+            embeddings_index[word] = coefs
+            
+
+        f.close()
+
+        # get word index
+        word_index = self.tokenizer.vocab
+        embedding_matrix = np.random.random((len(word_index) + 1, self.embedding_dim))
+
+        # create embedding matrix.
+        for word, i in word_index.items():
+            embedding_vector = embeddings_index.get(word)
+            if embedding_vector is not None:
+                embedding_matrix[i] = embedding_vector
+
+        (
+            self.word_hidden_size,
+            self.sent_hidden_size,
+            self.graph_hidden,
+        ) = (self.embedding_dim//2, self.embedding_dim//2, self.embedding_dim)
+
+        model = Han(
+            manifold=self.manifold,
+            embedding_dim=self.embedding_dim,
+            latent_dim=self.embedding_dim,
+            embedding_matrix=embedding_matrix,
+            word_hidden_size=self.word_hidden_size,
+            sent_hidden_size=self.sent_hidden_size,
+            device=self.device,
+            graph_hidden=self.graph_hidden,
+            batch_size=batch_size,
+            num_classes=n_classes,
+            fourier=self.fourier,
+        )
+
+        print(f"{self.model_type} built")
+
+        return model
+
+    def _build_bert(self, n_classes=2, batch_size=12):
+        embeddings_index = {}
+
+        self.glove_dir = f"{DATA_PATH}/glove.twitter.27B.{self.embedding_dim}d.txt"
+        # self.glove_dir = f"{DATA_PATH}/poincare_glove_100D_cosh-dist-sq_init_trick.txt"
+
+        f = open(self.glove_dir, encoding="utf-8")
+
+        for line in f:
+            values = line.split()
+            word = values[0]
+            coefs = np.asarray(values[1:], dtype="float32")
+            embeddings_index[word] = coefs
+            
+
+        f.close()
+
+        # get word index
+        word_index = self.tokenizer.vocab
+        embedding_matrix = np.random.random((len(word_index) + 1, self.embedding_dim))
+
+        # create embedding matrix.
+        for word, i in word_index.items():
+            embedding_vector = embeddings_index.get(word)
+            if embedding_vector is not None:
+                embedding_matrix[i] = embedding_vector
+
+        (
+            self.word_hidden_size,
+            self.sent_hidden_size,
+            self.graph_hidden,
+        ) = (self.embedding_dim//2, self.embedding_dim//2, self.embedding_dim)
+
+        model = HBert(
+            manifold=self.manifold,
+            embedding_dim=self.embedding_dim,
+            latent_dim=self.embedding_dim,
+            embedding_matrix=embedding_matrix,
+            word_hidden_size=self.word_hidden_size,
+            sent_hidden_size=self.sent_hidden_size,
+            device=self.device,
+            graph_hidden=self.graph_hidden,
+            batch_size=batch_size,
+            num_classes=n_classes,
+            fourier=self.fourier,
+        )
+
+        print(f"{self.model_type} built")
+
+        return model
+
+        
     def _encode_texts(self, texts, max_sents, max_sen_len):
         """
         Pre process the news content sentences to equal length for feeding to GRU
@@ -266,6 +371,10 @@ class Trainer:
         print("Building model....")
         if self.model_type == HYPHEN:
             self.model = self._build_hyphen(n_classes=train_y.shape[-1], batch_size=batch_size)
+        elif self.model_type == BERT:
+            self.model = self._build_bert(n_classes=train_y.shape[-1], batch_size=batch_size)
+        elif self.model_type == HAN:
+            self.model = self._build_han(n_classes=train_y.shape[-1], batch_size=batch_size)
         else:
             self.model = self._build_ssm4rc(n_classes=train_y.shape[-1], batch_size=batch_size)
 
@@ -371,6 +480,7 @@ class Trainer:
                     predictions,_,_ = self.model(
                         content=content, comment=comment
                     )  # As and Ac are the attention weights we are returning
+                    # print(predictions.shape)
                 loss = self.criterion(predictions, label)
                 accelerator.backward(loss)
                 self.optimizer.step()

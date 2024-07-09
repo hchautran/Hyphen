@@ -15,6 +15,7 @@ from hyptorch.lorentz.layers import LorentzMLR
 from ..utils.utils import matrix_mul
 from typing import Union
 from .s4 import FFTConv, DropoutNd 
+from transformers import BertConfig, BertModel 
 
 
 class S4Model(nn.Module):
@@ -60,9 +61,9 @@ class S4Model(nn.Module):
             self.norms.append(nn.LayerNorm(d_model))
             self.dropouts.append(DropoutNd(dropout))
         self.decoder = nn.Sequential(
-            nn.Linear(d_model, d_model*factor),
-            nn.GELU(),
-            nn.Linear(d_model*factor, d_output),
+            # nn.Linear(d_model, d_model*factor),
+            # nn.GELU(),
+            nn.Linear(d_model, d_output),
         ) 
 
 
@@ -100,30 +101,24 @@ class S4DEnc(nn.Module):
         super(S4DEnc, self).__init__()
         self.manifold = manifold
         self.pooling_mode = pooling_mode
-        self.word_ssm= S4Model(d_input=word_hidden_size, d_model=word_hidden_size//2, d_output=sent_hidden_size, n_layers=1, prenorm=False, d_state=word_hidden_size//2, factor=factor, bidirectional=True)
-        self.sent_ssm= S4Model(d_input=sent_hidden_size, d_model=sent_hidden_size//2, d_output=sent_hidden_size, n_layers=1, prenorm=False, d_state=sent_hidden_size//2, factor=factor, bidirectional=False)
-        self.word_weight= nn.Parameter(torch.Tensor(word_hidden_size, word_hidden_size))
-        self.context_weight = nn.Parameter(torch.Tensor(word_hidden_size, 1))
+        # self.word_config = BertConfig(
+        #     hidden_size=word_hidden_size,
+        #     num_hidden_layers=1,
+        #     num_attention_heads=2,
+        #     intermediate_size=word_hidden_size*4
+        # )
+        # self.word_bert= BertModel(config=self.word_config)
+        self.word_ssm= S4Model(d_input=word_hidden_size, d_model=word_hidden_size//2, d_output=sent_hidden_size, n_layers=1, prenorm=False, d_state=sent_hidden_size//2, factor=factor, bidirectional=False)
+        self.sent_ssm= S4Model(d_input=sent_hidden_size, d_model=sent_hidden_size//2, d_output=sent_hidden_size, n_layers=1, prenorm=False, d_state=sent_hidden_size//2, factor=factor, bidirectional=True)
         self.lookup = self.create_embeddeding_layer(embedding_matrix)
-        self._create_weights(mean=0.0, std=0.05)
 
-    def _create_weights(self, mean=0.0, std=0.05):
-        self.word_weight.data.normal_(mean, std)
-        self.context_weight.data.normal_(mean, std)
 
     def forward(self, input):
         output_list = []
         # input = input.permute(1, 0, 2)
         for x in input:
             x = self.lookup(x)
-            if self.pooling_mode == 'mean': 
-                x = self.word_ssm(x=x, pooling=True) 
-            else:
-                x = self.word_ssm(x=x, pooling=False) 
-                output = matrix_mul(x, self.word_weight, self.word_bias)
-                output = matrix_mul(x, self.context_weight).permute(1,0)[..., None]
-                output = F.softmax(output, dim=-1)
-                x = (x.transpose(-1,-2) @ output).squeeze(-1)
+            x = self.word_ssm(x=x, pooling=True) 
             output_list.append(x)
 
         output = torch.stack(output_list, dim=0)
@@ -200,7 +195,7 @@ class SSM4RC(nn.Module):
 
         if isinstance(self.manifold, CustomLorentz):
             self.coattention = LorentzCoAttn(
-                embedding_dim=embedding_dim, 
+                embedding_dim=sent_hidden_size*2, 
                 latent_dim=latent_dim, 
                 manifold=self.manifold,  
                 fourier=self.fourier
@@ -209,7 +204,7 @@ class SSM4RC(nn.Module):
             # self.fc =  nn.Linear(2*latent_dim+1, num_classes)
         elif isinstance(self.manifold, PoincareBall):
             self.coattention = PoincareCoAttn(
-                embedding_dim=embedding_dim, 
+                embedding_dim=sent_hidden_size*2, 
                 latent_dim=latent_dim, 
                 manifold=self.manifold,  
                 fourier=self.fourier
@@ -217,7 +212,7 @@ class SSM4RC(nn.Module):
             self.fc =  nn.Linear(2*latent_dim, num_classes)
         else:
             self.coattention = EuclidCoAttn(
-                embedding_dim=embedding_dim, 
+                embedding_dim=sent_hidden_size*2, 
                 latent_dim=latent_dim, 
                 fourier=self.fourier
             )

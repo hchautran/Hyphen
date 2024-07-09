@@ -73,8 +73,8 @@ class CoAttention(nn.Module):
             sentence_rep = self.manifold.logmap0(sentence_rep)
             comment_rep = self.manifold.logmap0(comment_rep)
 
-            sentence_rep = torch.fft.fft(sentence_rep,dim=1).float()
-            comment_rep = torch.fft.fft(comment_rep,dim=1).float()
+            sentence_rep = torch.fft.fft2(sentence_rep).float()
+            comment_rep = torch.fft.fft2(comment_rep).float()
 
 
             lorentz_sentence_rep = self.euclid_to_lorentz(sentence_rep)
