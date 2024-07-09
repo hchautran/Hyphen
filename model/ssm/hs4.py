@@ -1,6 +1,5 @@
 """Minimal version of S4D with extra options and features stripped out, for pedagogical purposes."""
 
-import math
 import torch
 import torch.nn as nn
 from einops import rearrange, repeat
@@ -174,9 +173,6 @@ class SSM4RC(nn.Module):
     ):
 
         super(SSM4RC,self).__init__()
-        self.comment_curvature = torch.tensor(1.0)
-        self.content_curvature = torch.tensor(1.0)
-        self.combined_curvature = torch.tensor(1.0)
         self.fourier = fourier
         self.graph_glove_dim = graph_glove_dim#the dimension of glove embeddings used to initialise the comments amr graph
         self.batch_size = batch_size

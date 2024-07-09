@@ -13,7 +13,7 @@ from hyptorch.geoopt.optim.radam import RiemannianAdam
 from model.utils.metrics import Metrics
 from model.Hyphen.poincare import Hyphen as PoincareHyphen
 from model.Hyphen.euclidean import Hyphen as EuclidHyphen
-from model.ssm.s4d import SSM4RC 
+from model.ssm.hs4 import SSM4RC 
 from model.utils.dataset import FakeNewsDataset
 from model.utils.utils import get_evaluation
 import wandb
@@ -275,7 +275,7 @@ class Trainer:
         if self.log_enable:
             wandb.init(
                 project=self.platform,
-                name=f'{self.model_type}_{self.embedding_dim}_{self.manifold_name}',
+                name=f'{self.model_type}_{self.embedding_dim}_{self.manifold_name}_{self.fourier}',
                 config={
                     'type': self.model_type,
                     'manifold': self.manifold_name,

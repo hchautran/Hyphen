@@ -59,22 +59,23 @@ class CoAttention(nn.Module):
         # x = F.pad(x, (1,0), "constant", 0)
         out = self.manifold.expmap0(x)
         return out 
+    
+    def lorentz_to_euclid(self, x):
+        x = self.manifold.logmap0(x)
+        x = x.narrow(-1, 1, x.shape[-1] - 1)
+        return x
 
  
 
     def forward(self, sentence_rep:torch.Tensor, comment_rep:torch.Tensor):
 
         if self.fourier:
-            # KFU
             sentence_rep = self.manifold.logmap0(sentence_rep)
-            assert not torch.isnan(sentence_rep).any(), "sentence is nan before fft2"
-            sentence_rep = torch.fft.fft2(sentence_rep).float()
-            assert not torch.isnan(sentence_rep).any(), "sentence is nan after fft2"
-
             comment_rep = self.manifold.logmap0(comment_rep)
-            assert not torch.isnan(comment_rep).any(), "comment is nan before fft2"
-            comment_rep = torch.fft.fft2(comment_rep).float()
-            assert not torch.isnan(comment_rep).any(), "comment is nan after fft2"
+
+            sentence_rep = torch.fft.fft(sentence_rep,dim=1).float()
+            comment_rep = torch.fft.fft(comment_rep,dim=1).float()
+
 
             lorentz_sentence_rep = self.euclid_to_lorentz(sentence_rep)
             lorentz_comment_rep = self.euclid_to_lorentz(comment_rep) 
@@ -94,7 +95,6 @@ class CoAttention(nn.Module):
         Hs = self.poincare.mobius_add(Hs_a, Hs_b)
         Hs = self.act(lmath.poincare_to_lorentz(Hs, self.manifold.k))  # [32, 80, 50]
 
-        # Hc = torch.tanh(torch.matmul(self.Wc, comment_rep_trans)+ torch.matmul(torch.matmul(self.Ws, sentence_rep_trans), L_trans))
         Hc_a = self.Wc(lorentz_comment_rep)
         Hc_b = self.Ws(lorentz_sentence_rep)
         Hc_b = lmath.lorentz_to_poincare(Hc_b, k=self.manifold.k)
@@ -109,25 +109,14 @@ class CoAttention(nn.Module):
 
         As = self.poincare.mobius_matvec(self.whs, Hs) 
         As = F.softmax(As.transpose(-1, -2), dim=-1)
-        # assert not torch.isnan(As).any(), "As is nan"
 
         Ac = self.poincare.mobius_matvec(self.whc, Hc.transpose(-1, -2))
         Ac = F.softmax(Ac.transpose(-1, -2), dim=-1)
-        # assert not torch.isnan(Ac).any(), "Ac is nan"
 
-        # co_s = torch.matmul(As,sentence_rep) # (1, 100)
         co_s = self.manifold.centroid(lorentz_sentence_rep, As)
-        # assert not torch.isnan(co_s).any(), "co_s is nan"
-
-        # co_c = torch.matmul(Ac, comment_rep) # (1, 100)
         co_c = self.manifold.centroid(lorentz_comment_rep, Ac)
-        # assert not torch.isnan(co_c).any(), "co_c is nan"
-
         co_sc = self.manifold.concat(co_s, co_c)
-
         co_sc = torch.squeeze(co_sc)
-
         assert not torch.isnan(co_sc).any(), "co_sc is nan"
-        # co_sc = co_sc.narrow(-1, 1, co_sc.shape[-1] - 1)# [32, 200],
         return co_sc, As, Ac  # [32, 200],
 
