@@ -26,7 +26,7 @@ from hyptorch.geoopt import PoincareBall, Euclidean
 from hyptorch.lorentz.manifold import CustomLorentz 
 from accelerate import Accelerator
 import pathlib
-
+from torch.profiler import profile, record_function, ProfilerActivity
 
 accelerator = Accelerator()
 class Trainer:
@@ -469,8 +469,6 @@ class Trainer:
                 self.optimizer.zero_grad()
 
                 content, comment, comment_graph ,label, subgraphs = sample
-
-
                 if self.model_type == HYPHEN:
                     self.model.content_encoder._init_hidden_state(len(label))
                     predictions,_,_ = self.model(
@@ -628,3 +626,98 @@ class Trainer:
             no_pad_text_att.append(tmp_no_pad_text_att)
 
         return no_pad_text_att
+
+    def benchmark(   self,
+        train_x,
+        train_raw_c,
+        train_y,
+        train_c,
+        val_c,
+        val_raw_c,
+        val_y,
+        val_x,
+        sub_train,
+        sub_val,
+        batch_size=32,
+    ):
+        self._fit_on_texts()
+
+        print("Building model....")
+        if self.model_type == HYPHEN:
+            self._build_hyphen(n_classes=train_y.shape[-1], batch_size=batch_size)
+        elif self.model_type == BERT:
+            self._build_bert(n_classes=train_y.shape[-1], batch_size=batch_size)
+        elif self.model_type == HAN:
+            self._build_han(n_classes=train_y.shape[-1], batch_size=batch_size)
+        else:
+            self._build_ssm4rc(n_classes=train_y.shape[-1], batch_size=batch_size)
+
+        self.model = accelerator.prepare(self.model) 
+        self.model.eval()
+        print("Encoding texts....")
+        # Create encoded input for content and comments
+        encoded_train_x = self._encode_texts(train_x, self.max_sents,self.max_sen_len)
+        encoded_val_x = self._encode_texts(val_x, self.max_sents,self.max_sen_len)
+        encoded_train_c = self._encode_texts(train_raw_c, self.max_coms, self.max_sen_len)
+        encoded_val_c = self._encode_texts(val_raw_c, self.max_coms, self.max_sen_len)
+        print("preparing dataset....")
+
+        # adding self loops in the dgl graphs
+        train_c = [dgl.add_self_loop(i) for i in train_c]
+        val_c = [dgl.add_self_loop(i) for i in val_c]
+        train_dataset = FakeNewsDataset(
+            content=encoded_train_x,
+            comment=encoded_train_c,
+            comment_graph=train_c,
+            labels=train_y,
+            subgraphs=sub_train,
+        )
+        val_dataset = FakeNewsDataset(
+            content=encoded_val_x,
+            comment=encoded_val_c,
+            comment_graph=val_c,
+            labels=val_y,
+            subgraphs=sub_val,
+        )
+
+        train_loader = DataLoader(
+            train_dataset,
+            batch_size=batch_size,
+            collate_fn=train_dataset.collate_fn,
+            shuffle=True,
+            drop_last=True,
+        )
+        val_loader = DataLoader(
+            val_dataset,
+            batch_size=batch_size,
+            collate_fn=val_dataset.collate_fn,
+            shuffle=True,
+            drop_last=True,
+        )
+        self.dataset_sizes = {
+            "train": train_dataset.__len__(),
+            "val": val_dataset.__len__(),
+        }
+        train_loader, val_loader = accelerator.prepare(train_loader, val_loader) 
+        self.dataloaders = {"train": train_loader, "val": val_loader}
+
+        with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], profile_memory=True, record_shapes=True) as prof:
+            with record_function("model_inference"):
+                for i in range(10):
+                    content, comment, comment_graph ,label, subgraphs = next(iter(self.dataloaders["train"]))
+                    if self.model_type == HYPHEN:
+                        self.model.content_encoder._init_hidden_state(len(label))
+                        _,_,_ = self.model(
+                            content=content, comment=comment_graph, subgraphs=subgraphs
+                        )
+                    else:
+                        _,_,_ = self.model(
+                            content=content, comment=comment
+                        )
+        print(prof.key_averages().table(sort_by="self_cpu_time_total", row_limit=10))
+        prof.export_chrome_trace("trace.json")
+
+    def num_params(self): 
+        total_params = sum(p.numel() for p in self.model.parameters())
+        print(f"Total parameters: {total_params}")
+
