@@ -154,8 +154,7 @@ class Trainer:
             raise RuntimeError("Does not support lorentz")
             
         print(f"{self.model_type} built")
-
-        return model
+        self.model = model
 
     def _build_ssm4rc(self, n_classes=2, batch_size=12):
         """
@@ -208,8 +207,8 @@ class Trainer:
         )
 
         print(f"{self.model_type} built")
+        self.model = model
 
-        return model
 
     def _build_han(self, n_classes=2, batch_size=12):
         embeddings_index = {}
@@ -259,8 +258,8 @@ class Trainer:
         )
 
         print(f"{self.model_type} built")
+        self.model = model
 
-        return model
 
     def _build_bert(self, n_classes=2, batch_size=12):
         embeddings_index = {}
@@ -310,8 +309,7 @@ class Trainer:
         )
 
         print(f"{self.model_type} built")
-
-        return model
+        self.model = model
 
         
     def _encode_texts(self, texts, max_sents, max_sen_len):
@@ -370,13 +368,13 @@ class Trainer:
 
         print("Building model....")
         if self.model_type == HYPHEN:
-            self.model = self._build_hyphen(n_classes=train_y.shape[-1], batch_size=batch_size)
+            self._build_hyphen(n_classes=train_y.shape[-1], batch_size=batch_size)
         elif self.model_type == BERT:
-            self.model = self._build_bert(n_classes=train_y.shape[-1], batch_size=batch_size)
+            self._build_bert(n_classes=train_y.shape[-1], batch_size=batch_size)
         elif self.model_type == HAN:
-            self.model = self._build_han(n_classes=train_y.shape[-1], batch_size=batch_size)
+            self._build_han(n_classes=train_y.shape[-1], batch_size=batch_size)
         else:
-            self.model = self._build_ssm4rc(n_classes=train_y.shape[-1], batch_size=batch_size)
+            self._build_ssm4rc(n_classes=train_y.shape[-1], batch_size=batch_size)
 
         self.model = accelerator.prepare(self.model) 
         self.optimizer = RiemannianAdam(self.model.parameters(), lr=self.lr)
@@ -459,6 +457,8 @@ class Trainer:
         best_acc = 0.0
 
         for epoch in range(epochs):
+            accelerator.clear()
+            accelerator.free_memory()
             print("Epoch {}/{}".format(epoch, epochs - 1))
             print("-" * 100)
             self.metrics.on_train_begin()
@@ -509,7 +509,7 @@ class Trainer:
                     self.model.content_encoder._init_hidden_state(num_sample)
                     predictions,_,_ = self.model(
                         content=content, comment=comment_graph, subgraphs=subgraphs
-                    )  # As and Ac are the attention weights we are returning
+                    ) 
                 else:
                     predictions,_,_ = self.model(
                         content=content, comment=comment 
@@ -529,10 +529,10 @@ class Trainer:
                 print(f"Best F1: {f1}")
                 print("Saving best model!")
                 self.log({'epoch':epoch, 'best F1': f1, 'best precision': prec, 'best recall': rec})
-                dst_dir = f"saved_models/{self.platform}/"
+                dst_dir = f"saved_models/{self.platform}/{self.model_type}"
                 os.makedirs(dst_dir, exist_ok=True)
                 torch.save(
-                    self.model.state_dict(), f"{dst_dir}best_model_{self.manifold}.pt"
+                    self.model.state_dict(), f"{dst_dir}/best_model_{self.manifold}.pt"
                 )
                 self.best_model = self.model
                 best_f1 = f1

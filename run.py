@@ -43,7 +43,7 @@ y_train, y_val = props['train']['y'], props['val']['y']
 c_train, c_val = props['train']['c'], props['val']['c']
 sub_train, sub_val = props['train']['subgraphs'], props['val']['subgraphs']
 
-model = Trainer(
+trainer = Trainer(
     manifold=args.manifold,
     model_type=args.model,
     platform=args.dataset, 
@@ -59,7 +59,7 @@ model = Trainer(
 )
 
 
-model.train(
+trainer.train(
     train_x=x_train, 
     train_y=y_train, 
     train_c=c_train, 
