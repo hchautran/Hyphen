@@ -1,4 +1,4 @@
-for model in han hyphen 
+for model in hs4 han bert 
 do
     for embedding_dim in 200 
     do 
