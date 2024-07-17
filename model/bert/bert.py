@@ -30,7 +30,7 @@ class BertEnc(nn.Module):
             intermediate_size=word_hidden_size*factor
         )
         self.sent_config = BertConfig( 
-            max_position_embeddings=2048,
+            max_position_embeddings=10000,
             hidden_size=sent_hidden_size,
             num_hidden_layers=1,
             num_attention_heads=1,

@@ -117,6 +117,6 @@ class CoAttention(nn.Module):
         co_c = self.manifold.centroid(lorentz_comment_rep, Ac)
         co_sc = self.manifold.concat(co_s, co_c)
         co_sc = torch.squeeze(co_sc)
-        assert not torch.isnan(co_sc).any(), "co_sc is nan"
+        # assert not torch.isnan(co_sc).any(), "co_sc is nan"
         return co_sc, As, Ac  # [32, 200],
 

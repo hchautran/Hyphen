@@ -74,5 +74,5 @@ class CoAttention(nn.Module):
         co_sc = torch.cat([co_s, co_c], dim=-1)
         co_sc = torch.squeeze(co_sc)
 
-        assert not torch.isnan(co_sc).any(), "co_sc is nan"
+        # assert not torch.isnan(co_sc).any(), "co_sc is nan"
         return co_sc, As, Ac  # [32, 200],

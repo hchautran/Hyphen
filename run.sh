@@ -1,4 +1,4 @@
-for model in bert 
+for model in han 
 do
     for embedding_dim in 200 
     do 
