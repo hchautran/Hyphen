@@ -23,7 +23,7 @@ class BertEnc(nn.Module):
     ):
         super(BertEnc, self).__init__()
         self.word_config = BertConfig(
-            max_position_embeddings=30,
+            max_position_embeddings=100,
             hidden_size=word_hidden_size,
             num_hidden_layers=1,
             num_attention_heads=1,
