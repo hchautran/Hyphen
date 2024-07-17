@@ -15,7 +15,7 @@ from model.Hyphen.poincare import Hyphen as PoincareHyphen
 from model.Hyphen.euclidean import Hyphen as EuclidHyphen
 from model.ssm.hs4 import SSM4RC 
 from model.bert.bert import HBert 
-from model.Han.Han import Han
+from model.han.han import Han
 from model.utils.dataset import FakeNewsDataset
 from model.utils.utils import get_evaluation
 import wandb
@@ -477,8 +477,7 @@ class Trainer:
                 else:
                     predictions,_,_ = self.model(
                         content=content, comment=comment
-                    )  # As and Ac are the attention weights we are returning
-                    # print(predictions.shape)
+                    )  
                 loss = self.criterion(predictions, label)
                 accelerator.backward(loss)
                 self.optimizer.step()
@@ -546,8 +545,6 @@ class Trainer:
                 "Test/F1": f1,
                 
             })
-
-
         print(f"Best F1: {best_f1}")
         self.save_results(best_f1, best_recall, best_precision, best_acc, train_time, eval_time)
         print("Training  end")
@@ -579,7 +576,6 @@ class Trainer:
                 tmp_no_pad_text_att.append(
                     (no_pad_sen_att, sentence_co_attention[k][i])
                 )
-
             no_pad_text_att.append(tmp_no_pad_text_att)
 
         # Normalize without padding tokens
@@ -627,7 +623,7 @@ class Trainer:
 
         return no_pad_text_att
 
-    def benchmark(   self,
+    def benchmark( self,
         train_x,
         train_raw_c,
         train_y,
@@ -721,3 +717,22 @@ class Trainer:
         total_params = sum(p.numel() for p in self.model.parameters())
         print(f"Total parameters: {total_params}")
 
+
+
+    def build_model( self,
+        batch_size=32,
+    ):
+        self._fit_on_texts()
+
+        print("Building model....")
+        if self.model_type == HYPHEN:
+            self._build_hyphen(n_classes=2, batch_size=batch_size)
+        elif self.model_type == BERT:
+            self._build_bert(n_classes=2, batch_size=batch_size)
+        elif self.model_type == HAN:
+            self._build_han(n_classes=2, batch_size=batch_size)
+        else:
+            self._build_ssm4rc(n_classes=2, batch_size=batch_size)
+
+        self.model = accelerator.prepare(self.model) 
+        self.model.eval()

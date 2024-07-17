@@ -23,12 +23,14 @@ class BertEnc(nn.Module):
     ):
         super(BertEnc, self).__init__()
         self.word_config = BertConfig(
+            max_position_embeddings=30,
             hidden_size=word_hidden_size,
             num_hidden_layers=1,
             num_attention_heads=1,
             intermediate_size=word_hidden_size*factor
         )
         self.sent_config = BertConfig( 
+            max_position_embeddings=2048,
             hidden_size=sent_hidden_size,
             num_hidden_layers=1,
             num_attention_heads=1,
@@ -110,14 +112,14 @@ class HBert(nn.Module):
             manifold=self.manifold, 
             word_hidden_size=word_hidden_size*2,
             sent_hidden_size=sent_hidden_size*2,
-            embedding_matrix=embedding_matrix
+            embedding_matrix=embedding_matrix,
         )
         print('building HypComEnc')
         self.comment_encoder= BertEnc(
             manifold=self.manifold, 
             word_hidden_size=word_hidden_size*2,
             sent_hidden_size=sent_hidden_size*2,
-            embedding_matrix=embedding_matrix
+            embedding_matrix=embedding_matrix,
         )
         print('building CoAttention')
 

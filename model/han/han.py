@@ -80,6 +80,32 @@ class HanEnc(nn.Module):
 
         return output 
 
+    def step(self, input):
+        output_list = []
+        input = input.permute(1, 0, 2)
+        for i in input:
+            output, _ = self.word_att_net(i.permute(1, 0), self.word_hidden_state)
+            output_list.append(output)
+        output = torch.cat(output_list, 0)
+
+        _, x= self.sent_att_net(output, self.sent_hidden_state)
+        if isinstance(self.manifold, PoincareBall):
+            clip_r = 2.0 
+            x_norm = torch.norm(x, dim=-1, keepdim=True) + 1e-5
+            fac = torch.minimum(torch.ones_like(x_norm), clip_r/ x_norm)
+            x = x * fac
+            output = self.manifold.expmap0(x)
+        elif isinstance(self.manifold, CustomLorentz):
+            clip_r = 2.0 
+            x_norm = torch.norm(x, dim=-1, keepdim=True) + 1e-5
+            fac = torch.minimum(torch.ones_like(x_norm), clip_r/ x_norm)
+            x = x * fac
+            x = F.pad(x, (1,0), "constant", 0)
+            output = self.manifold.expmap0(x)
+
+        return output 
+
+
 
 class SentAttNet(nn.Module):
     def __init__(self, sent_hidden_size=50, word_hidden_size=50):
@@ -101,6 +127,8 @@ class SentAttNet(nn.Module):
         output = F.softmax(output, dim = -1)
         output = element_wise_mul(f_output, output.permute(1, 0)).squeeze(0)
         return output, f_output.permute(1, 0, 2) #return none curvature
+
+
 
 class WordAttNet(nn.Module):
     def __init__(self, embedding_matrix, hidden_size=50):
@@ -132,8 +160,6 @@ class WordAttNet(nn.Module):
         emb_layer.load_state_dict({'weight': weights_matrix})
         emb_layer.weight.requires_grad = trainable
         return emb_layer
-
-
 
 
 class Han(nn.Module):
@@ -211,6 +237,13 @@ class Han(nn.Module):
 
 
     def forward(self, content, comment):
+        content_embedding = self.content_encoder(content)
+        comment_embedding = self.content_encoder(comment)
+        coatten, As, Ac = self.coattention(content_embedding, comment_embedding)
+        preds = self.fc(coatten)
+        return preds, As, Ac
+
+    def step(self, content:torch.Tensor=None, comment:torch.Tensor=None):
         content_embedding = self.content_encoder(content)
         comment_embedding = self.content_encoder(comment)
         coatten, As, Ac = self.coattention(content_embedding, comment_embedding)
