@@ -148,45 +148,4 @@ class GCNConv(MessagePassing):
     Implementation based on torch_geometric
     """
 
-    def __init__(self, in_channels, out_channels, normalize=False, bias=True, dropout=0, act=None):
-        super(SAGEConv, self).__init__(aggr='mean')
-
-        self.in_channels = in_channels
-        self.out_channels = out_channels
-        self.normalize = normalize
-
-        self.lin_rel = torch.nn.Linear(in_channels, out_channels, bias=bias)
-        self.lin_root = torch.nn.Linear(in_channels, out_channels, bias=False)
-
-        self.dropout = dropout
-        self.act = act
-        self.reset_parameters()
-
-    def reset_parameters(self):
-        self.lin_rel.reset_parameters()
-        self.lin_root.reset_parameters()
-
-    def forward(self, input, edge_weight=None):
-        """"""
-        x, adj = input
-        edge_index = adj._indices()
-
-        if torch.is_tensor(x):
-            x = (x, x)
-
-        out = self.propagate(edge_index, x=x, edge_weight=edge_weight)
-        out = self.lin_rel(out) + self.lin_root(x[1])
-
-        if self.normalize:
-            out = F.normalize(out, p=2, dim=-1)
-
-        out = F.dropout(out, p=self.dropout, training=self.training)
-        out = self.act(out)
-        return out, adj
-
-    def message(self, x_j, edge_weight):
-        return x_j if edge_weight is None else edge_weight.view(-1, 1) * x_j
-
-    def __repr__(self):
-        return '{}({}, {})'.format(self.__class__.__name__, self.in_channels,
-                                   self.out_channels)
+    
