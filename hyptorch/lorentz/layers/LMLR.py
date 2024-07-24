@@ -26,14 +26,14 @@ class LorentzMLR(nn.Module):
 
     def forward(self, x):
         # Hyperplane
-        sqrt_mK = 1/self.manifold.k.sqrt()
+        sqrt_mk = 1/self.manifold.k.sqrt()
         norm_z = torch.norm(self.z, dim=-1)
-        w_t = (torch.sinh(sqrt_mK*self.a)*norm_z)
-        w_s = torch.cosh(sqrt_mK*self.a.view(-1,1))*self.z
+        w_t = (torch.sinh(sqrt_mk*self.a)*norm_z)
+        w_s = torch.cosh(sqrt_mk*self.a.view(-1,1))*self.z
         beta = torch.sqrt(-w_t**2+torch.norm(w_s, dim=-1)**2)
-        alpha = -w_t*x.narrow(-1, 0, 1) + (torch.cosh(sqrt_mK*self.a)*torch.inner(x.narrow(-1, 1, x.shape[-1]-1), self.z))
+        alpha = -w_t*x.narrow(-1, 0, 1) + (torch.cosh(sqrt_mk*self.a)*torch.inner(x.narrow(-1, 1, x.shape[-1]-1), self.z))
 
-        d = self.manifold.k.sqrt()*torch.abs(torch.asinh(sqrt_mK*alpha/beta))  # Distance to hyperplane
+        d = self.manifold.k.sqrt()*torch.abs(torch.asinh(sqrt_mk*alpha/beta))  # Distance to hyperplane
         logits = torch.sign(alpha)*beta*d
 
         return logits
