@@ -29,8 +29,8 @@ parser.add_argument('--eval', default=False, action='store_true')
 
 args = parser.parse_args()
 
-file = open(f'{DATA_PATH}/data/{args.dataset}/{args.dataset}_preprocessed.pkl', 'rb')
-df = pd.read_csv(f'data/{args.dataset}/{args.dataset}.csv') 
+file = open(f'{DATA_PATH}/{args.dataset}/{args.dataset}_preprocessed.pkl', 'rb')
+df = pd.read_csv(f'{DATA_PATH}/{args.dataset}/{args.dataset}.csv') 
 props = pickle.load(file)
 
 id_train, id_test = props['train']['id'], props['val']['id']
