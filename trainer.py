@@ -761,8 +761,7 @@ class Trainer:
         self.model.load_state_dict(torch.load(model_path))
         print("Model loaded successfully.")
 
-
-
+        
     def build_model( self,
         batch_size=32,
     ):
@@ -780,3 +779,6 @@ class Trainer:
 
         self.model = accelerator.prepare(self.model) 
         self.model.eval()
+
+    def visualize(self):
+        pass
