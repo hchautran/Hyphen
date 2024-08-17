@@ -19,7 +19,6 @@ from model.han.han import Han
 from model.utils.dataset import FakeNewsDataset
 from model.utils.utils import get_evaluation
 import wandb
-from tokenizers import Tokenizer, models, normalizers, pre_tokenizers, decoders, trainers
 from transformers import AutoTokenizer
 from const import * 
 from hyptorch.geoopt import PoincareBall, Euclidean
@@ -27,6 +26,15 @@ from hyptorch.lorentz.manifold import CustomLorentz
 from accelerate import Accelerator
 import pathlib
 from torch.profiler import profile, record_function, ProfilerActivity
+import torch
+import matplotlib as mpl
+import matplotlib.pyplot as plt
+from typing import Union
+
+from hyptorch.geoopt.manifolds.lorentz.math import lorentz_to_poincare, poincare_to_lorentz
+
+import umap
+
 
 accelerator = Accelerator()
 class Trainer:
@@ -361,7 +369,8 @@ class Trainer:
         sub_val,
         batch_size=9,
         epochs=5,
-        eval=False
+        eval=False,
+        visualize=False,
     ):
 
         # Fit the vocabulary set on the content and comments
@@ -446,6 +455,9 @@ class Trainer:
         if eval:
             self.load_model()
             return self.evaluate()
+        elif visualize:
+            self.load_model()
+            return self.visualize_embeddings()
         return self.run_epoch(epochs)
         
     def run_epoch(self, epochs):
@@ -557,7 +569,6 @@ class Trainer:
 
 
     def evaluate(self):
-        start = time.time()
         self.model.eval()
         loss_ls = []
         total_samples = 0
@@ -780,5 +791,169 @@ class Trainer:
         self.model = accelerator.prepare(self.model) 
         self.model.eval()
 
-    def visualize(self):
-        pass
+
+    @torch.no_grad()
+    def _visualize_reconstructions(self, model, dataloader, device, num_imgs: int = 5):
+        """ Visualizes image reconstructions of a VAE-model. 
+        
+        Dataloader has to have a batch_size > num_imgs!
+
+        Returns a matplotlib.pyplot figure.
+        """
+        model.eval()
+        model.to(device)
+
+        x, _ = next(iter(dataloader))
+
+        x = x[:num_imgs] # Select first images
+        x = x.to(device)
+        x_hat = model.module.reconstruct(x)
+
+        x = x.cpu().detach().numpy()
+        x_hat = x_hat.cpu().detach().numpy()
+
+        fig = plt.figure()
+
+        for i in range(num_imgs):
+            # Plot input img
+            _ = fig.add_subplot(2, num_imgs,i+1, xticks=[], yticks=[])
+            plt.imshow(x[i].transpose(1,2,0), cmap='gray')
+
+            # Plot reconstructed img
+            _ = fig.add_subplot(2, num_imgs,(i+1)+num_imgs, xticks=[], yticks=[])
+            plt.imshow(x_hat[i].transpose(1,2,0), cmap='gray')
+            
+        fig.tight_layout()
+        plt.subplots_adjust(wspace=0, hspace=0)
+
+        return fig
+
+    @torch.no_grad()
+    def _visualize_generations(self, model, device, num_imgs_per_axis: int = 5):
+        """ Visualizes image generations of a VAE-model. 
+
+        Returns a matplotlib.pyplot figure.
+        """
+        model.eval()
+        model.to(device)
+
+        x_gen = model.module.generate_random(num_imgs_per_axis**2, device)
+        x_gen = x_gen.cpu().detach().numpy()
+
+        fig = plt.figure(figsize=(10,10))
+        for i in range(num_imgs_per_axis**2):
+            # Plot input img
+            ax = fig.add_subplot(num_imgs_per_axis, num_imgs_per_axis, i+1, xticks=[], yticks=[])
+            plt.imshow(x_gen[i].transpose(1,2,0), cmap='gray') 
+
+        fig.tight_layout()
+        plt.subplots_adjust(wspace=0, hspace=0)
+            
+        return fig
+
+    @torch.no_grad()
+    def visualize_hyperbolic(self, data,  labels=None):
+        """ Plots hyperbolic data on Poincaré ball and tangent space 
+
+        Note: This function only supports curvature k=1.
+        """
+
+        fig = plt.figure(figsize=(14,7))
+        if labels is not None:
+            labels = labels.cpu()
+
+        # 2D embeddings
+        if (data.shape[-1]==2 and isinstance(self.manifold, PoincareBall) ) or (data.shape[-1]==3 and not isinstance(self.manifold, PoincareBall)):
+            if  isinstance(self.manifold, PoincareBall) :
+                data_P = data
+            else:
+                data_P = lorentz_to_poincare(data, k=self.manifold.k).cpu()
+        # Dimensionality reduction to 2D
+        else:
+            if  isinstance(self.manifold, PoincareBall) :
+                data = poincare_to_lorentz(data, self.manifold.k)
+            reducer = umap.UMAP(output_metric='hyperboloid')
+            data = reducer.fit_transform(data.cpu().numpy())
+            data = self.manifold.add_time(torch.tensor(data).to(self.device))
+            data_P = lorentz_to_poincare(data, k=self.manifold.k).cpu()
+
+        ax = fig.add_subplot(1,2,1)
+        plt.scatter(data_P[:,0], data_P[:,1], c=labels, s=1)
+        # Draw Poincaré boundary
+        boundary=plt.Circle((0,0),1, color='k', fill=False)
+        ax.add_patch(boundary)
+
+        ax.set_xlim([-1, 1])
+        ax.set_ylim([-1, 1])
+        ax.set_aspect('equal', adjustable='box')
+
+        plt.colorbar()
+        plt.xlabel("$z_0$")
+        plt.ylabel("$z_1$")
+        ax.set_title("Poincaré Ball")
+
+        # Plot hyperbolic embeddings in tangent space of the origin
+        if  isinstance(self.manifold, PoincareBall) :
+            z_all_T = (self.manifold.logmap0(data_P.to(self.device))).detach().cpu()
+        else:
+            z_all_T = (self.manifold.logmap0(data)).detach().cpu()
+            z_all_T = z_all_T[..., 1:]
+
+        ax = fig.add_subplot(1,2,2)
+        plt.scatter(z_all_T[:,0], z_all_T[:,1], c=labels, s=1)
+        ax.set_aspect('equal', adjustable='box')
+        plt.colorbar()
+        plt.xlabel("$z_0$")
+        plt.ylabel("$z_1$")
+        ax.set_title("Tangent Space")
+        return fig
+
+    @torch.no_grad()
+    def visualize_embeddings(self):
+        """ Visualizes embeddings of a model. 
+
+        Umap only supports k=1?
+        """
+        self.model.eval()
+
+        s_all = []
+        c_all = []
+        co_all = []
+        labels = []
+
+        for i, sample in enumerate(self.dataloaders["val"]):
+            content, comment, _,label, _ = sample
+            s ,c, co_sc, a_s, a_c = self.model.forward_features(
+                content=content, comment=comment 
+            )  # As and Ac are the attention weights we are returning
+            labels.append(label.argmax(dim=-1))
+            
+            co_all.append(co_sc)
+            s_all.append(s.view(s.shape[0], -1))
+            c_all.append(c.view(c.shape[0], -1))
+
+        s_all = torch.cat(s_all, dim=0) # gpu or cpu
+        c_all = torch.cat(c_all, dim=0)# gpu or cpu
+        co_all = torch.cat(co_all, dim=0)# gpu or cpu
+        labels = torch.cat(labels) # cpu
+
+        if isinstance(self.manifold, PoincareBall) or isinstance(self.manifold, CustomLorentz):
+            fig = self.visualize_hyperbolic(co_all, labels)
+        else:
+            # Plot Euclidean embeddings
+            if co_all.shape[-1]>2:
+                reducer = umap.UMAP()
+                co_all = reducer.fit_transform(co_all)
+            else:
+                co_all = co_all
+            
+            fig = plt.figure(figsize=(14, 7))
+
+            ax = fig.add_subplot(1,2,1)
+            plt.scatter(co_all[:,0], s_all[:,1], c=labels, s=1)
+            ax.set_aspect('equal', adjustable='box')
+            plt.colorbar()
+            plt.xlabel("$z_0$")
+            plt.ylabel("$z_1$")
+            
+        return fig

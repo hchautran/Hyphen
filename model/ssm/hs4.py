@@ -219,9 +219,18 @@ class SSM4RC(nn.Module):
             self.fc =  nn.Linear(2*latent_dim, num_classes)
 
 
-    def forward(self, content, comment):
+    def forward(self, content:torch.Tensor, comment:torch.Tensor):
         content_embedding = self.content_encoder(content)
         comment_embedding = self.content_encoder(comment)
         coatten, As, Ac = self.coattention(content_embedding, comment_embedding)
         preds = self.fc(coatten)
         return preds, As, Ac
+
+        
+    def forward_features(self, content:torch.Tensor, comment:torch.Tensor):
+        content_embedding = self.content_encoder(content)
+        comment_embedding = self.content_encoder(comment)
+        coatten, As, Ac = self.coattention(content_embedding, comment_embedding)
+        return content_embedding, comment_embedding, coatten, As, Ac
+
+        
