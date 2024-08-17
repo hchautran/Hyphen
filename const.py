@@ -1,3 +1,5 @@
+import os
+
 LORENTZ = 'lorentz'
 POINCARE = 'poincare'
 EUCLID = 'euclid'
@@ -14,4 +16,5 @@ HYPHEN='hyphen'
 HS4='hs4'
 BERT='bert'
 HAN='han'
-DATA_PATH='/home/jupyter-iec_chau/chau/Hyphen'
+DATA_PATH=f'{os.getcwd()}/data'
+ROOT_PATH=f'{os.getcwd()}'

@@ -91,8 +91,8 @@ class Trainer:
         """
         embeddings_index = {}
 
-        self.glove_dir = f"{DATA_PATH}/glove.twitter.27B.{self.embedding_dim}d.txt"
-        # self.glove_dir = f"{DATA_PATH}/poincare_glove_100D_cosh-dist-sq_init_trick.txt"
+        self.glove_dir = f"{ROOT_PATH}/glove.twitter.27B.{self.embedding_dim}d.txt"
+        # self.glove_dir = f"{ROOT_PATH}/poincare_glove_100D_cosh-dist-sq_init_trick.txt"
 
         f = open(self.glove_dir, encoding="utf-8")
 
@@ -162,8 +162,8 @@ class Trainer:
         """
         embeddings_index = {}
 
-        self.glove_dir = f"{DATA_PATH}/glove.twitter.27B.{self.embedding_dim}d.txt"
-        # self.glove_dir = f"{DATA_PATH}/poincare_glove_100D_cosh-dist-sq_init_trick.txt"
+        self.glove_dir = f"{ROOT_PATH}/glove.twitter.27B.{self.embedding_dim}d.txt"
+        # self.glove_dir = f"{ROOT_PATH}/poincare_glove_100D_cosh-dist-sq_init_trick.txt"
 
         f = open(self.glove_dir, encoding="utf-8")
 
@@ -213,8 +213,8 @@ class Trainer:
     def _build_han(self, n_classes=2, batch_size=12):
         embeddings_index = {}
 
-        self.glove_dir = f"{DATA_PATH}/glove.twitter.27B.{self.embedding_dim}d.txt"
-        # self.glove_dir = f"{DATA_PATH}/poincare_glove_100D_cosh-dist-sq_init_trick.txt"
+        self.glove_dir = f"{ROOT_PATH}/glove.twitter.27B.{self.embedding_dim}d.txt"
+        # self.glove_dir = f"{ROOT_PATH}/poincare_glove_100D_cosh-dist-sq_init_trick.txt"
 
         f = open(self.glove_dir, encoding="utf-8")
 
@@ -264,8 +264,8 @@ class Trainer:
     def _build_bert(self, n_classes=2, batch_size=12):
         embeddings_index = {}
 
-        self.glove_dir = f"{DATA_PATH}/glove.twitter.27B.{self.embedding_dim}d.txt"
-        # self.glove_dir = f"{DATA_PATH}/poincare_glove_100D_cosh-dist-sq_init_trick.txt"
+        self.glove_dir = f"{ROOT_PATH}/glove.twitter.27B.{self.embedding_dim}d.txt"
+        # self.glove_dir = f"{ROOT_PATH}/poincare_glove_100D_cosh-dist-sq_init_trick.txt"
 
         f = open(self.glove_dir, encoding="utf-8")
 
@@ -347,7 +347,7 @@ class Trainer:
             myfile.write(row)
 
 
-    def train(
+    def run(
         self,
         train_x,
         train_raw_c,
@@ -361,6 +361,7 @@ class Trainer:
         sub_val,
         batch_size=9,
         epochs=5,
+        eval=False
     ):
 
         # Fit the vocabulary set on the content and comments
@@ -442,7 +443,10 @@ class Trainer:
         train_loader, val_loader = accelerator.prepare(train_loader, val_loader) 
         self.dataloaders = {"train": train_loader, "val": val_loader}
         print("Dataset prepared.")
-        self.run_epoch(epochs)
+        if eval:
+            self.load_model()
+            return self.evaluate()
+        return self.run_epoch(epochs)
         
     def run_epoch(self, epochs):
         """
@@ -529,7 +533,7 @@ class Trainer:
                 dst_dir = f"saved_models/{self.platform}/{self.model_type}"
                 os.makedirs(dst_dir, exist_ok=True)
                 torch.save(
-                    self.model.state_dict(), f"{dst_dir}/best_model_{self.manifold}.pt"
+                    self.model.state_dict(), f"{dst_dir}/best_model_{self.manifold_name}.pt"
                 )
                 self.best_model = self.model
                 best_f1 = f1
@@ -551,6 +555,37 @@ class Trainer:
         print("-" * 100)
 
 
+
+    def evaluate(self):
+        start = time.time()
+        self.model.eval()
+        loss_ls = []
+        total_samples = 0
+        self.metrics.on_eval_begin()
+        for i, sample in enumerate(self.dataloaders["val"]):
+            content, comment, comment_graph,label, subgraphs = sample
+            num_sample = len(label)  # last batch size
+            total_samples += num_sample
+            if self.model_type == HYPHEN:
+                self.model.content_encoder._init_hidden_state(num_sample)
+                predictions,_,_ = self.model(
+                    content=content, comment=comment_graph, subgraphs=subgraphs
+                ) 
+            else:
+                predictions,_,_ = self.model(
+                    content=content, comment=comment 
+                )  # As and Ac are the attention weights we are returning
+            te_loss = self.criterion(predictions, label)
+            loss_ls.append(te_loss * num_sample)
+            _, predictions = torch.max(torch.softmax(predictions, dim=-1), 1)
+            _, label = torch.max(label, 1)
+            predictions = predictions.detach().cpu().numpy()
+            label = label.detach().cpu().numpy()
+
+            self.metrics.on_batch_end(100, i, predictions, label)
+
+        return self.metrics.on_epoch_end(100)
+ 
     def process_atten_weight(
         self, encoded_text, content_word_level_attentions, sentence_co_attention
     ):
@@ -716,6 +751,15 @@ class Trainer:
     def num_params(self): 
         total_params = sum(p.numel() for p in self.model.parameters())
         print(f"Total parameters: {total_params}")
+
+        
+    def load_model(self):
+        dst_dir = f"saved_models/{self.platform}/{self.model_type}"
+        os.makedirs(dst_dir, exist_ok=True)
+        model_path=f"{dst_dir}/best_model_{self.manifold_name}.pt"
+        # self.model = torch.load(model_path)
+        self.model.load_state_dict(torch.load(model_path))
+        print("Model loaded successfully.")
 
 
 

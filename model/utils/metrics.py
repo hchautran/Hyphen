@@ -9,6 +9,14 @@ class Metrics():
         self.val_precisions = []
         self.val_auc = []
         self.val_acc = []
+    
+    def on_eval_begin(self):
+        self.val_f1s = []
+        self.val_recalls = []
+        self.val_precisions = []
+        self.val_auc = []
+        self.val_acc = []
+
 
     def on_batch_end(self,epoch, batch ,val_predict, val_targ):
 

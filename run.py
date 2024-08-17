@@ -7,8 +7,6 @@ parser = argparse.ArgumentParser()
 from trainer import Trainer 
 from const import * 
 import pandas as pd
-import torch
-from torch.profiler import profile, record_function, ProfilerActivity
 
 parser.add_argument('--manifold', choices=[EUCLID, LORENTZ, POINCARE], default = POINCARE, help='Choose the underlying manifold for Hyphen')
 parser.add_argument('--no-fourier', default=True, action='store_false', help='If you want to remove the Fourier sublayer from Hyphen\'s co-attention module.')
@@ -27,6 +25,7 @@ parser.add_argument('--model', type = str, default= HYPHEN, help='model type')
 parser.add_argument('--enable-log', action='store_true', default=False , help='log to wandb')
 parser.add_argument('--embedding-dim', default=100, help='embedding dim')
 parser.add_argument('--curv', default=1.0, help='curvature')
+parser.add_argument('--eval', default=False, action='store_true')
 
 args = parser.parse_args()
 
@@ -59,7 +58,7 @@ trainer = Trainer(
 )
 
 
-trainer.train(
+trainer.run(
     train_x=x_train, 
     train_y=y_train, 
     train_c=c_train, 
@@ -71,7 +70,8 @@ trainer.train(
     sub_train=sub_train, 
     sub_val=sub_val, 
     batch_size=args.batch_size, 
-    epochs=args.epochs
+    epochs=args.epochs,
+    eval=args.eval
 )
 
 
