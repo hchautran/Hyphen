@@ -67,7 +67,7 @@ class CoAttention(nn.Module):
 
  
 
-    def forward(self, sentence_rep:torch.Tensor, comment_rep:torch.Tensor):
+    def forward_feature(self, sentence_rep:torch.Tensor, comment_rep:torch.Tensor):
 
         if self.fourier:
             sentence_rep = self.manifold.logmap0(sentence_rep)
@@ -118,5 +118,10 @@ class CoAttention(nn.Module):
         co_sc = self.manifold.concat(co_s, co_c)
         co_sc = torch.squeeze(co_sc)
         # assert not torch.isnan(co_sc).any(), "co_sc is nan"
-        return co_sc, As, Ac  # [32, 200],
+        return co_s, co_c, co_sc, As, Ac  # [32, 200],
+
+    
+    def forward(self, sentence_rep, comment_rep):
+        _, _, co_sc, As, Ac= self.forward_feature(sentence_rep, comment_rep)
+        return co_sc, As, Ac
 

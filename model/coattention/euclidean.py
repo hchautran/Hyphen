@@ -53,7 +53,7 @@ class CoAttention(nn.Module):
         self.concat_b.data = torch.randn((1, self.embedding_dim))
         self.fourier = fourier
 
-    def forward(self, sentence_rep, comment_rep):
+    def forward_feature(self, sentence_rep, comment_rep):
         """This function will return the shape [batch_size, embedding_dim]."""
         if self.fourier:
             # KFU
@@ -75,4 +75,10 @@ class CoAttention(nn.Module):
         co_sc = torch.squeeze(co_sc)
 
         # assert not torch.isnan(co_sc).any(), "co_sc is nan"
-        return co_sc, As, Ac  # [32, 200],
+        return co_s, co_c, co_sc, As, Ac # [32, 200],
+
+    def forward(self, sentence_rep, comment_rep):
+        _, _, co_sc, As, Ac= self.forward_feature(sentence_rep, comment_rep)
+        return co_sc, As, Ac
+
+

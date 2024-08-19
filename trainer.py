@@ -791,122 +791,107 @@ class Trainer:
         self.model = accelerator.prepare(self.model) 
         self.model.eval()
 
+    
+    def fit_reducer(self, data:torch.Tensor):
+        reducer = umap.UMAP(output_metric=f'{"euclidean" if self.manifold_name == EUCLID else "hyperboloid"}')
+        if  isinstance(self.manifold, PoincareBall) :
+            data = self.manifold.expmap0(data)
+            self.manifold.assert_check_point_on_manifold(data)
+            data = poincare_to_lorentz(data, torch.abs(self.manifold.k)).cpu()
+
+        reducer.fit(data.cpu().numpy())
+        return reducer
+
+
+
 
     @torch.no_grad()
-    def _visualize_reconstructions(self, model, dataloader, device, num_imgs: int = 5):
-        """ Visualizes image reconstructions of a VAE-model. 
-        
-        Dataloader has to have a batch_size > num_imgs!
-
-        Returns a matplotlib.pyplot figure.
-        """
-        model.eval()
-        model.to(device)
-
-        x, _ = next(iter(dataloader))
-
-        x = x[:num_imgs] # Select first images
-        x = x.to(device)
-        x_hat = model.module.reconstruct(x)
-
-        x = x.cpu().detach().numpy()
-        x_hat = x_hat.cpu().detach().numpy()
-
-        fig = plt.figure()
-
-        for i in range(num_imgs):
-            # Plot input img
-            _ = fig.add_subplot(2, num_imgs,i+1, xticks=[], yticks=[])
-            plt.imshow(x[i].transpose(1,2,0), cmap='gray')
-
-            # Plot reconstructed img
-            _ = fig.add_subplot(2, num_imgs,(i+1)+num_imgs, xticks=[], yticks=[])
-            plt.imshow(x_hat[i].transpose(1,2,0), cmap='gray')
-            
-        fig.tight_layout()
-        plt.subplots_adjust(wspace=0, hspace=0)
-
-        return fig
-
-    @torch.no_grad()
-    def _visualize_generations(self, model, device, num_imgs_per_axis: int = 5):
-        """ Visualizes image generations of a VAE-model. 
-
-        Returns a matplotlib.pyplot figure.
-        """
-        model.eval()
-        model.to(device)
-
-        x_gen = model.module.generate_random(num_imgs_per_axis**2, device)
-        x_gen = x_gen.cpu().detach().numpy()
-
-        fig = plt.figure(figsize=(10,10))
-        for i in range(num_imgs_per_axis**2):
-            # Plot input img
-            ax = fig.add_subplot(num_imgs_per_axis, num_imgs_per_axis, i+1, xticks=[], yticks=[])
-            plt.imshow(x_gen[i].transpose(1,2,0), cmap='gray') 
-
-        fig.tight_layout()
-        plt.subplots_adjust(wspace=0, hspace=0)
-            
-        return fig
-
-    @torch.no_grad()
-    def visualize_hyperbolic(self, data,  labels=None):
+    def visualize_hyperbolic(self, reducer:umap.UMAP, data:torch.Tensor, labels=None, size=10):
         """ Plots hyperbolic data on Poincaré ball and tangent space 
 
         Note: This function only supports curvature k=1.
         """
 
-        fig = plt.figure(figsize=(14,7))
+        fig = plt.figure(figsize=(14, 7))
+        ax = fig.add_subplot(1,2,1)
         if labels is not None:
             labels = labels.cpu()
 
-        # 2D embeddings
-        if (data.shape[-1]==2 and isinstance(self.manifold, PoincareBall) ) or (data.shape[-1]==3 and not isinstance(self.manifold, PoincareBall)):
-            if  isinstance(self.manifold, PoincareBall) :
-                data_P = data
-            else:
-                data_P = lorentz_to_poincare(data, k=self.manifold.k).cpu()
-        # Dimensionality reduction to 2D
-        else:
-            if  isinstance(self.manifold, PoincareBall) :
-                data = poincare_to_lorentz(data, self.manifold.k)
-            reducer = umap.UMAP(output_metric='hyperboloid')
-            data = reducer.fit_transform(data.cpu().numpy())
-            data = self.manifold.add_time(torch.tensor(data).to(self.device))
-            data_P = lorentz_to_poincare(data, k=self.manifold.k).cpu()
-
+        if  isinstance(self.manifold, PoincareBall) :
+            data = self.manifold.expmap0(data)
+            self.manifold.assert_check_point_on_manifold(data)
+            data = poincare_to_lorentz(data, torch.abs(self.manifold.k)).cpu()
+            # print(data)
+        data = reducer.transform(data.cpu().numpy())
+        lorentz = CustomLorentz(k=1) 
+        data = lorentz.add_time(torch.tensor(data).to(self.device))
+        data_P = lorentz_to_poincare(data, k=torch.abs(self.manifold.k)).cpu()
         ax = fig.add_subplot(1,2,1)
-        plt.scatter(data_P[:,0], data_P[:,1], c=labels, s=1)
-        # Draw Poincaré boundary
-        boundary=plt.Circle((0,0),1, color='k', fill=False)
-        ax.add_patch(boundary)
+        
+        plt.scatter(data_P[:,0], data_P[:,1], c=labels, s=size, cmap='coolwarm')
 
+        # Draw Poincaré boundary
+        # Create a grid of points inside a circle
+        n = 500 
+        x = np.linspace(-1.5, 1.5, n)
+        y = np.linspace(-1.5, 1.5, n)
+        X, Y = np.meshgrid(x, y)
+
+        Z = np.sqrt(X**2 + Y**2) 
+
+        Z = Z * 2.0/ np.max(Z)
+
+        # Mask values outside the circle
+        mask = Z <= 1  # Only show inside the circle
+
+        # Set the background color for outside the circle
+        gradient_color = np.ones_like(Z)
+        gradient_color[mask] = Z[mask]
+
+        # Plot the gradient using imshow
+        ax.imshow(gradient_color, extent=(-1.5, 1.5, -1.5, 1.5), origin='upper', cmap='pink')
+
+        # Add a circular boundary
+        circle = plt.Circle((0, 0), 1.0, edgecolor='black', facecolor='none', linestyle='--')
+        ax.add_patch(circle)
         ax.set_xlim([-1, 1])
         ax.set_ylim([-1, 1])
         ax.set_aspect('equal', adjustable='box')
+        ax.axis('off')
+        # ax.add_patch(circle)
+        # ax.set_xlim([-1, 1])
+        # ax.set_ylim([-1, 1])
+        # ax.set_aspect('equal', adjustable='box')
 
-        plt.colorbar()
-        plt.xlabel("$z_0$")
-        plt.ylabel("$z_1$")
+        # plt.xlabel("$z_0$")
+        # plt.ylabel("$z_1$")
         ax.set_title("Poincaré Ball")
 
         # Plot hyperbolic embeddings in tangent space of the origin
-        if  isinstance(self.manifold, PoincareBall) :
-            z_all_T = (self.manifold.logmap0(data_P.to(self.device))).detach().cpu()
-        else:
-            z_all_T = (self.manifold.logmap0(data)).detach().cpu()
-            z_all_T = z_all_T[..., 1:]
+        # if  isinstance(self.manifold, PoincareBall) :
+        #     z_all_T = (self.manifold.logmap0(data_P.to(self.device))).detach().cpu()
+        # else:
+        #     z_all_T = (self.manifold.logmap0(data)).detach().cpu()
+        #     z_all_T = z_all_T[..., 1:]
 
-        ax = fig.add_subplot(1,2,2)
-        plt.scatter(z_all_T[:,0], z_all_T[:,1], c=labels, s=1)
+        # ax = fig.add_subplot(1,2,2)
+        # plt.scatter(z_all_T[:,0], z_all_T[:,1], c=labels, s=1)
+        # ax.set_aspect('equal', adjustable='box')
+        # plt.colorbar()
+        # plt.xlabel("$z_0$")
+        # plt.ylabel("$z_1$")
+        # ax.set_title("Tangent Space")
+        return fig
+
+    def visualize_euclid(self, reducer:umap.UMAP, data:torch.Tensor, labels=None, size=10, ):
+        data = data.cpu()
+        data = reducer.transform(data)
+        fig = plt.figure(figsize=(14, 7))
+        ax = fig.add_subplot(1,2,1)
+        plt.scatter(data[:,0], data[:,1], c=labels.cpu(), s=size, cmap='coolwarm')
         ax.set_aspect('equal', adjustable='box')
-        plt.colorbar()
         plt.xlabel("$z_0$")
         plt.ylabel("$z_1$")
-        ax.set_title("Tangent Space")
-        return fig
 
     @torch.no_grad()
     def visualize_embeddings(self):
@@ -917,43 +902,62 @@ class Trainer:
         self.model.eval()
 
         s_all = []
+        co_s_all = []
         c_all = []
+        co_c_all = []
         co_all = []
         labels = []
+        s_level_labels = []
 
         for i, sample in enumerate(self.dataloaders["val"]):
             content, comment, _,label, _ = sample
-            s ,c, co_sc, a_s, a_c = self.model.forward_features(
+            s ,c, co_s, co_c, co_sc, a_s, a_c = self.model.forward_features(
                 content=content, comment=comment 
             )  # As and Ac are the attention weights we are returning
-            labels.append(label.argmax(dim=-1))
-            
+
+            label = label.argmax(dim=-1)
+            labels.append(label)
+            # print(label.shape)
+            # print(label[..., None].expand(s.shape[0],s.shape[1]).shape)
+            s_level_labels.append(label[..., None].expand(s.shape[0],s.shape[1]).unsqueeze(-2))
+            s_all.append(s.view(-1,s.shape[-1]))
+            c_all.append(c.view(-1,s.shape[-1]))
             co_all.append(co_sc)
-            s_all.append(s.view(s.shape[0], -1))
-            c_all.append(c.view(c.shape[0], -1))
+            co_s_all.append(co_s.view(-1,s.shape[-1]))
+            co_c_all.append(co_c.view(-1,s.shape[-1]))
 
         s_all = torch.cat(s_all, dim=0) # gpu or cpu
+        co_s_all = torch.cat(co_s_all, dim=0) # gpu or cpu
         c_all = torch.cat(c_all, dim=0)# gpu or cpu
+        co_c_all = torch.cat(co_c_all, dim=0)# gpu or cpu
         co_all = torch.cat(co_all, dim=0)# gpu or cpu
         labels = torch.cat(labels) # cpu
+        s_level_labels = torch.cat(s_level_labels) # cpu
+        print(s_all.shape)
+        print(co_s_all.shape)
+        print(c_all.shape)
+        print(co_c_all.shape)
+        print(co_all.shape)
+        print(s_level_labels.shape)
+        print('fitting document-level reducer')
+        doc_level_reducer = self.fit_reducer(co_all)
+        print('fitting sentence-level reducer')
+        sent_level_reducer = self.fit_reducer(torch.cat([s_all, c_all], dim=0))
+        co_sent_level_reducer = self.fit_reducer(torch.cat([co_c_all, co_s_all], dim=0))
+        
+        
+
 
         if isinstance(self.manifold, PoincareBall) or isinstance(self.manifold, CustomLorentz):
-            fig = self.visualize_hyperbolic(co_all, labels)
+            fig_co = self.visualize_hyperbolic(doc_level_reducer,co_all, labels, size=100)
+            fig_co_s = self.visualize_hyperbolic(co_sent_level_reducer, torch.cat([co_s_all, co_c_all]), torch.cat([labels, labels]), size=50)
+            fig_s = self.visualize_hyperbolic(sent_level_reducer, torch.cat([s_all,c_all]),  torch.cat([s_level_labels, s_level_labels]), size=10)
         else:
             # Plot Euclidean embeddings
-            if co_all.shape[-1]>2:
-                reducer = umap.UMAP()
-                co_all = reducer.fit_transform(co_all)
-            else:
-                co_all = co_all
+            fig_co = self.visualize_euclid(doc_level_reducer,co_all, labels, size=100)
+            fig_co_s = self.visualize_euclid(co_sent_level_reducer, torch.cat([co_s_all, co_c_all]), torch.cat([labels, labels]), size=50)
+            fig_s = self.visualize_euclid(sent_level_reducer, torch.cat([s_all,c_all]),  torch.cat([s_level_labels, s_level_labels]), size=10)
+          
             
-            fig = plt.figure(figsize=(14, 7))
-
-            ax = fig.add_subplot(1,2,1)
-            plt.scatter(co_all[:,0], s_all[:,1], c=labels, s=1)
-            ax.set_aspect('equal', adjustable='box')
-            plt.colorbar()
-            plt.xlabel("$z_0$")
-            plt.ylabel("$z_1$")
-            
-        return fig
+        return fig_co, fig_co_s, fig_s
+        # return fig_co

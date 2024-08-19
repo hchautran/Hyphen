@@ -228,9 +228,10 @@ class SSM4RC(nn.Module):
 
         
     def forward_features(self, content:torch.Tensor, comment:torch.Tensor):
-        content_embedding = self.content_encoder(content)
-        comment_embedding = self.content_encoder(comment)
-        coatten, As, Ac = self.coattention(content_embedding, comment_embedding)
-        return content_embedding, comment_embedding, coatten, As, Ac
+        s = self.content_encoder(content)
+        c = self.content_encoder(comment)
+        co_s, co_c, co_sc, As, Ac = self.coattention.forward_feature(s, c)
+        return s, c, co_s, co_c ,co_sc, As, Ac
+        
 
         

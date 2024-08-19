@@ -55,7 +55,7 @@ class CoAttention(nn.Module):
         self.c = self.manifold.c 
         self.fourier = fourier
 
-    def forward(self, sentence_rep, comment_rep):
+    def forward_feature(self, sentence_rep, comment_rep):
         """This function will return the shape [batch_size, embedding_dim]."""
 
         mobius_matvec = self.manifold.mobius_matvec
@@ -163,4 +163,8 @@ class CoAttention(nn.Module):
 
         assert not torch.isnan(co_sc).any(), "co_sc is nan"
         # return expmap0(co_sc), As, Ac  # [32, 200],
-        return co_sc, As, Ac  # [32, 200],
+        return co_s, co_c ,co_sc, As, Ac  # [32, 200],
+
+    def forward(self, sentence_rep, comment_rep):
+        _, _, co_sc, As, Ac= self.forward_feature(sentence_rep, comment_rep)
+        return co_sc, As, Ac
