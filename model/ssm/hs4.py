@@ -88,6 +88,25 @@ class S4Model(nn.Module):
         return x
 
 
+    def forward_feature(self, x:torch.Tensor, pooling=False): 
+        x = self.encoder(x)  # (B, L, d_input) -> (B, L, d_model)
+        x_encode = x 
+        x = x.transpose(-1, -2)  # (B, L, d_model) -> (B, d_model, L)
+        for layer, norm, dropout in zip(self.s4_layers, self.norms, self.dropouts):
+            z = x
+            z, _ = layer(z)
+            z = dropout(z)
+            x = z + x
+            x = norm(x.transpose(-1, -2)).transpose(-1, -2)
+
+        x = x.transpose(-1, -2)
+        x = self.decoder(x)  #
+        if pooling:
+            return x_encode, x.mean(dim=1)
+        return x
+
+
+
 class S4DEnc(nn.Module):
     def __init__(
         self, 
@@ -139,6 +158,36 @@ class S4DEnc(nn.Module):
 
         return output 
 
+    def forward_feature(self, input):
+        output_list = []
+        word_embeds = []
+        # input = input.permute(1, 0, 2)
+        for x in input:
+            x = self.lookup(x)
+            x, x_mean = self.word_ssm.forward_feature(x=x, pooling=True) 
+            output_list.append(x_mean)
+            word_embeds.append(x)
+
+        output = torch.stack(output_list, dim=0)
+        word_embeds = torch.stack(word_embeds, dim=0)
+        x = self.sent_ssm(output)
+
+        if isinstance(self.manifold, PoincareBall):
+            clip_r = 2.0 
+            x_norm = torch.norm(x, dim=-1, keepdim=True) + 1e-5
+            fac = torch.minimum(torch.ones_like(x_norm), clip_r/ x_norm)
+            x = x * fac
+            output = self.manifold.expmap0(x)
+        elif isinstance(self.manifold, CustomLorentz):
+            clip_r = 2.0 
+            x_norm = torch.norm(x, dim=-1, keepdim=True) + 1e-5
+            fac = torch.minimum(torch.ones_like(x_norm), clip_r/ x_norm)
+            x = x * fac
+            x = F.pad(x, (1,0), "constant", 0)
+            output = self.manifold.expmap0(x)
+
+        return output, word_embeds 
+
 
     def create_embeddeding_layer(self, weights_matrix, trainable=False):
         self.num_embeddings, self.embedding_dim = weights_matrix.shape
@@ -149,7 +198,7 @@ class S4DEnc(nn.Module):
         return emb_layer
 
 
-class SSM4RC(nn.Module):
+class HS4Model(nn.Module):
 
     def __init__(
         self, 
@@ -167,7 +216,7 @@ class SSM4RC(nn.Module):
         fourier = False, 
     ):
 
-        super(SSM4RC,self).__init__()
+        super(HS4Model,self).__init__()
         self.fourier = fourier
         self.graph_glove_dim = graph_glove_dim#the dimension of glove embeddings used to initialise the comments amr graph
         self.batch_size = batch_size
@@ -228,10 +277,11 @@ class SSM4RC(nn.Module):
 
         
     def forward_features(self, content:torch.Tensor, comment:torch.Tensor):
-        s = self.content_encoder(content)
-        c = self.content_encoder(comment)
-        co_s, co_c, co_sc, As, Ac = self.coattention.forward_feature(s, c)
-        return s, c, co_s, co_c ,co_sc, As, Ac
+        sent_s, word_s = self.content_encoder.forward_feature(content)
+        sent_c, word_c = self.content_encoder.forward_feature(comment)
+        
+        co_s, co_c, co_sc, As, Ac = self.coattention.forward_feature(sent_s, sent_c)
+        return word_s, word_c, sent_s, sent_c, co_s, co_c ,co_sc, As, Ac
         
 
         

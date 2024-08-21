@@ -1,6 +1,6 @@
 for manifold in poincare 
 do
-    for model in hs4 
+    for model in HS4Model 
     do
         for embedding_dim in 200 
         do 

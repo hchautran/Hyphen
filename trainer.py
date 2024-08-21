@@ -13,7 +13,7 @@ from hyptorch.geoopt.optim.radam import RiemannianAdam
 from model.utils.metrics import Metrics
 from model.Hyphen.poincare import Hyphen as PoincareHyphen
 from model.Hyphen.euclidean import Hyphen as EuclidHyphen
-from model.ssm.hs4 import SSM4RC 
+from model.ssm.hs4 import HS4Model 
 from model.bert.bert import HBert 
 from model.han.han import Han
 from model.utils.dataset import FakeNewsDataset
@@ -27,9 +27,8 @@ from accelerate import Accelerator
 import pathlib
 from torch.profiler import profile, record_function, ProfilerActivity
 import torch
-import matplotlib as mpl
 import matplotlib.pyplot as plt
-from typing import Union
+import torch.nn.functional as F
 
 from hyptorch.geoopt.manifolds.lorentz.math import lorentz_to_poincare, poincare_to_lorentz
 
@@ -164,7 +163,7 @@ class Trainer:
         print(f"{self.model_type} built")
         self.model = model
 
-    def _build_ssm4rc(self, n_classes=2, batch_size=12):
+    def _build_HS4Model(self, n_classes=2, batch_size=12):
         """
         This function is used to build Hyphen model.
         """
@@ -200,7 +199,7 @@ class Trainer:
             self.graph_hidden,
         ) = (self.embedding_dim//2, self.embedding_dim//2, self.embedding_dim)
 
-        model = SSM4RC(
+        model = HS4Model(
             manifold=self.manifold,
             embedding_dim=self.embedding_dim,
             latent_dim=self.embedding_dim,
@@ -371,6 +370,7 @@ class Trainer:
         epochs=5,
         eval=False,
         visualize=False,
+        n_neighbors=100,
     ):
 
         # Fit the vocabulary set on the content and comments
@@ -384,7 +384,7 @@ class Trainer:
         elif self.model_type == HAN:
             self._build_han(n_classes=train_y.shape[-1], batch_size=batch_size)
         else:
-            self._build_ssm4rc(n_classes=train_y.shape[-1], batch_size=batch_size)
+            self._build_HS4Model(n_classes=train_y.shape[-1], batch_size=batch_size)
 
         self.model = accelerator.prepare(self.model) 
         self.optimizer = RiemannianAdam(self.model.parameters(), lr=self.lr)
@@ -692,7 +692,7 @@ class Trainer:
         elif self.model_type == HAN:
             self._build_han(n_classes=train_y.shape[-1], batch_size=batch_size)
         else:
-            self._build_ssm4rc(n_classes=train_y.shape[-1], batch_size=batch_size)
+            self._build_HS4Model(n_classes=train_y.shape[-1], batch_size=batch_size)
 
         self.model = accelerator.prepare(self.model) 
         self.model.eval()
@@ -786,14 +786,14 @@ class Trainer:
         elif self.model_type == HAN:
             self._build_han(n_classes=2, batch_size=batch_size)
         else:
-            self._build_ssm4rc(n_classes=2, batch_size=batch_size)
+            self._build_HS4Model(n_classes=2, batch_size=batch_size)
 
         self.model = accelerator.prepare(self.model) 
         self.model.eval()
 
     
-    def fit_reducer(self, data:torch.Tensor):
-        reducer = umap.UMAP(output_metric=f'{"euclidean" if self.manifold_name == EUCLID else "hyperboloid"}')
+    def fit_reducer(self, data:torch.Tensor, output_metric:str='euclidean', n_neighbors=100):
+        reducer = umap.UMAP(output_metric=output_metric, n_neighbors=n_neighbors)
         if  isinstance(self.manifold, PoincareBall) :
             data = self.manifold.expmap0(data)
             self.manifold.assert_check_point_on_manifold(data)
@@ -816,20 +816,21 @@ class Trainer:
         ax = fig.add_subplot(1,2,1)
         if labels is not None:
             labels = labels.cpu()
-
+        lorentz = CustomLorentz(k=1) 
         if  isinstance(self.manifold, PoincareBall) :
             data = self.manifold.expmap0(data)
             self.manifold.assert_check_point_on_manifold(data)
             data = poincare_to_lorentz(data, torch.abs(self.manifold.k)).cpu()
             # print(data)
         data = reducer.transform(data.cpu().numpy())
-        lorentz = CustomLorentz(k=1) 
         data = lorentz.add_time(torch.tensor(data).to(self.device))
         data_P = lorentz_to_poincare(data, k=torch.abs(self.manifold.k)).cpu()
         ax = fig.add_subplot(1,2,1)
         
-        plt.scatter(data_P[:,0], data_P[:,1], c=labels, s=size, cmap='coolwarm')
-
+        plt.scatter(data_P[:,0], data_P[:,1], c=labels, s=size, cmap='coolwarm', alpha=0.5)
+        # Add legend
+        plt.colorbar(label="Labels")
+        plt.legend()
         # Draw Poincaré boundary
         # Create a grid of points inside a circle
         n = 500 
@@ -854,18 +855,14 @@ class Trainer:
         # Add a circular boundary
         circle = plt.Circle((0, 0), 1.0, edgecolor='black', facecolor='none', linestyle='--')
         ax.add_patch(circle)
-        ax.set_xlim([-1, 1])
-        ax.set_ylim([-1, 1])
+        ax.set_xlim([-1.25, 1.25])
+        ax.set_ylim([-1.25, 1.25])
         ax.set_aspect('equal', adjustable='box')
         ax.axis('off')
-        # ax.add_patch(circle)
-        # ax.set_xlim([-1, 1])
-        # ax.set_ylim([-1, 1])
-        # ax.set_aspect('equal', adjustable='box')
 
         # plt.xlabel("$z_0$")
         # plt.ylabel("$z_1$")
-        ax.set_title("Poincaré Ball")
+        # ax.set_title("Poincaré Ball")
 
         # Plot hyperbolic embeddings in tangent space of the origin
         # if  isinstance(self.manifold, PoincareBall) :
@@ -901,17 +898,20 @@ class Trainer:
         """
         self.model.eval()
 
-        s_all = []
+        sent_s_all = []
+        sent_c_all = []
+        word_s_all = []
+        word_c_all = []
         co_s_all = []
-        c_all = []
         co_c_all = []
         co_all = []
         labels = []
-        s_level_labels = []
+        sent_labels= []
+        word_labels= []
 
         for i, sample in enumerate(self.dataloaders["val"]):
             content, comment, _,label, _ = sample
-            s ,c, co_s, co_c, co_sc, a_s, a_c = self.model.forward_features(
+            word_s, word_c, sent_s , sent_c, co_s, co_c, co_sc, a_s, a_c = self.model.forward_features(
                 content=content, comment=comment 
             )  # As and Ac are the attention weights we are returning
 
@@ -919,45 +919,78 @@ class Trainer:
             labels.append(label)
             # print(label.shape)
             # print(label[..., None].expand(s.shape[0],s.shape[1]).shape)
-            s_level_labels.append(label[..., None].expand(s.shape[0],s.shape[1]).unsqueeze(-2))
-            s_all.append(s.view(-1,s.shape[-1]))
-            c_all.append(c.view(-1,s.shape[-1]))
+            sent_labels.append(label[..., None].expand(sent_s.shape[0], sent_s.shape[1]))
+            word_labels.append(label[..., None, None].expand(word_s.shape[0], word_s.shape[1], word_s.shape[2]))
+            sent_s_all.append(sent_s.view(-1,sent_s.shape[-1]))
+            sent_c_all.append(sent_c.view(-1,sent_c.shape[-1]))
+            word_s_all.append(word_s.view(-1,word_s.shape[-1]))
+            word_c_all.append(word_c.view(-1,word_c.shape[-1]))
+            co_s_all.append(co_s.view(-1,sent_s.shape[-1]))
+            co_c_all.append(co_c.view(-1,sent_c.shape[-1]))
             co_all.append(co_sc)
-            co_s_all.append(co_s.view(-1,s.shape[-1]))
-            co_c_all.append(co_c.view(-1,s.shape[-1]))
 
-        s_all = torch.cat(s_all, dim=0) # gpu or cpu
+        word_s_all = torch.cat(word_s_all, dim=0) # gpu or cpu
+        word_c_all = torch.cat(word_c_all, dim=0)# gpu or cpu
+        sent_s_all = torch.cat(sent_s_all, dim=0) # gpu or cpu
+        sent_c_all = torch.cat(sent_c_all, dim=0)# gpu or cpu
         co_s_all = torch.cat(co_s_all, dim=0) # gpu or cpu
-        c_all = torch.cat(c_all, dim=0)# gpu or cpu
         co_c_all = torch.cat(co_c_all, dim=0)# gpu or cpu
         co_all = torch.cat(co_all, dim=0)# gpu or cpu
+
         labels = torch.cat(labels) # cpu
-        s_level_labels = torch.cat(s_level_labels) # cpu
-        print(s_all.shape)
-        print(co_s_all.shape)
-        print(c_all.shape)
-        print(co_c_all.shape)
-        print(co_all.shape)
-        print(s_level_labels.shape)
+        sent_labels = torch.cat(sent_labels) # cpu
+        word_labels = torch.cat(word_labels) # cpu
+
+        print('sent_labels', sent_labels.shape)
+        print('word_labels', word_labels.shape)
+        print('sent_s_all', sent_s_all.shape)
+        print('sent_c_all', sent_c_all.shape)
+        print('word_s_all', word_s_all.shape)
+        print('word_c_all', word_c_all.shape)
+        print('co_s_all', co_s_all.shape)
+        print('co_c_all', co_c_all.shape)
+        print('co_all', co_all.shape)
+        print('labels', labels.shape)   
+        
         print('fitting document-level reducer')
-        doc_level_reducer = self.fit_reducer(co_all)
-        print('fitting sentence-level reducer')
-        sent_level_reducer = self.fit_reducer(torch.cat([s_all, c_all], dim=0))
-        co_sent_level_reducer = self.fit_reducer(torch.cat([co_c_all, co_s_all], dim=0))
-        
-        
+        output_metric = 'hyperboloid' if self.manifold_name != EUCLID else 'euclidean'
+        doc_level_reducer = self.fit_reducer(co_all, output_metric=output_metric)
 
+        print('fitting sent-level reducer')
+        co_sent_level_reducer = self.fit_reducer(torch.cat([co_c_all, co_s_all], dim=0), output_metric=output_metric)
+        sent_level_reducer = self.fit_reducer(torch.cat([sent_s_all, sent_c_all], dim=0), output_metric=output_metric)  
 
+        print('fitting word-level reducer')
+        word_embeds = torch.cat([word_s_all, word_c_all])
         if isinstance(self.manifold, PoincareBall) or isinstance(self.manifold, CustomLorentz):
-            fig_co = self.visualize_hyperbolic(doc_level_reducer,co_all, labels, size=100)
-            fig_co_s = self.visualize_hyperbolic(co_sent_level_reducer, torch.cat([co_s_all, co_c_all]), torch.cat([labels, labels]), size=50)
-            fig_s = self.visualize_hyperbolic(sent_level_reducer, torch.cat([s_all,c_all]),  torch.cat([s_level_labels, s_level_labels]), size=10)
+            # clip_r = 2.0 
+            # if isinstance(self.manifold, PoincareBall):
+            #     x_norm = torch.norm(word_embeds, dim=-1, keepdim=True) + 1e-5
+            #     fac = torch.minimum(torch.ones_like(x_norm), clip_r/ x_norm)
+            #     word_embeds = word_embeds * fac
+            #     word_embeds = self.manifold.expmap0(word_embeds)
+            # elif isinstance(self.manifold, CustomLorentz):
+            #     x_norm = torch.norm(word_embeds, dim=-1, keepdim=True) + 1e-5
+            #     fac = torch.minimum(torch.ones_like(x_norm), clip_r/ x_norm)
+            #     word_embeds = word_embeds * fac
+            #     word_embeds = F.pad(word_embeds, (1,0), "constant", 0)
+            #     word_embeds = self.manifold.expmap0(word_embeds)
+            # word_level_reducer = self.fit_reducer(word_embeds, output_metric='hyperboloid')
+            fig_co = self.visualize_hyperbolic(doc_level_reducer, co_all, labels, size=100)
+            fig_co_s = self.visualize_hyperbolic(co_sent_level_reducer, torch.cat([co_s_all]), torch.cat([labels]), size=50)
+            fig_co_c = self.visualize_hyperbolic(co_sent_level_reducer, torch.cat([co_c_all]), torch.cat([labels]), size=50)
+            fig_sent_s = self.visualize_hyperbolic(sent_level_reducer, torch.cat([sent_s_all]),  torch.cat([sent_labels]), size=10)
+            fig_sent_c = self.visualize_hyperbolic(sent_level_reducer, torch.cat([sent_c_all]),  torch.cat([sent_labels]), size=10)
+            # fig_word = self.visualize_hyperbolic(word_level_reducer, word_embeds, torch.cat([word_labels, word_labels]), size=1)
         else:
             # Plot Euclidean embeddings
-            fig_co = self.visualize_euclid(doc_level_reducer,co_all, labels, size=100)
-            fig_co_s = self.visualize_euclid(co_sent_level_reducer, torch.cat([co_s_all, co_c_all]), torch.cat([labels, labels]), size=50)
-            fig_s = self.visualize_euclid(sent_level_reducer, torch.cat([s_all,c_all]),  torch.cat([s_level_labels, s_level_labels]), size=10)
-          
-            
-        return fig_co, fig_co_s, fig_s
-        # return fig_co
+            print('fitting word-level reducer')
+            fig_co = self.visualize_euclid(doc_level_reducer, co_all, labels, size=100)
+            fig_co_s = self.visualize_euclid(co_sent_level_reducer, torch.cat([co_s_all]), torch.cat([labels]), size=50)
+            fig_co_c = self.visualize_euclid(co_sent_level_reducer, torch.cat([co_c_all]), torch.cat([labels]), size=50)
+            fig_sent_s = self.visualize_euclid(sent_level_reducer, torch.cat([sent_s_all]),  torch.cat([sent_labels]), size=10)
+            fig_sent_c = self.visualize_euclid(sent_level_reducer, torch.cat([sent_c_all]),  torch.cat([sent_labels]), size=10)
+            # fig_word = self.visualize_euclid(word_level_reducer, word_embeds, torch.cat([word_labels]), size=1)
+                
+        return fig_co, fig_co_s, fig_co_c, fig_sent_s, fig_sent_c 
+        # return fig_word
