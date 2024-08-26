@@ -281,7 +281,8 @@ class HS4Model(nn.Module):
         sent_c, word_c = self.content_encoder.forward_feature(comment)
         
         co_s, co_c, co_sc, As, Ac = self.coattention.forward_feature(sent_s, sent_c)
-        return word_s, word_c, sent_s, sent_c, co_s, co_c ,co_sc, As, Ac
+        preds = self.fc(co_sc)
+        return word_s, word_c, sent_s, sent_c, co_s, co_c , co_sc, preds
         
 
         

@@ -370,7 +370,6 @@ class Trainer:
         epochs=5,
         eval=False,
         visualize=False,
-        n_neighbors=100,
     ):
 
         # Fit the vocabulary set on the content and comments
@@ -416,14 +415,14 @@ class Trainer:
         # adding self loops in the dgl graphs
         train_c = [dgl.add_self_loop(i) for i in train_c]
         val_c = [dgl.add_self_loop(i) for i in val_c]
-        train_dataset = FakeNewsDataset(
+        self.train_dataset = FakeNewsDataset(
             content=encoded_train_x,
             comment=encoded_train_c,
             comment_graph=train_c,
             labels=train_y,
             subgraphs=sub_train,
         )
-        val_dataset = FakeNewsDataset(
+        self.val_dataset = FakeNewsDataset(
             content=encoded_val_x,
             comment=encoded_val_c,
             comment_graph=val_c,
@@ -431,26 +430,26 @@ class Trainer:
             subgraphs=sub_val,
         )
 
-        train_loader = DataLoader(
-            train_dataset,
+        self.train_loader = DataLoader(
+            self.train_dataset,
             batch_size=batch_size,
-            collate_fn=train_dataset.collate_fn,
+            collate_fn=self.train_dataset.collate_fn,
             shuffle=True,
             drop_last=True,
         )
-        val_loader = DataLoader(
-            val_dataset,
+        self.val_loader = DataLoader(
+            self.val_dataset,
             batch_size=batch_size,
-            collate_fn=val_dataset.collate_fn,
+            collate_fn=self.val_dataset.collate_fn,
             shuffle=True,
             drop_last=True,
         )
         self.dataset_sizes = {
-            "train": train_dataset.__len__(),
-            "val": val_dataset.__len__(),
+            "train": self.train_dataset.__len__(),
+            "val": self.val_dataset.__len__(),
         }
-        train_loader, val_loader = accelerator.prepare(train_loader, val_loader) 
-        self.dataloaders = {"train": train_loader, "val": val_loader}
+        self.train_loader, self.val_loader = accelerator.prepare(self.train_loader, self.val_loader) 
+        self.dataloaders = {"train": self.train_loader, "val": self.val_loader}
         print("Dataset prepared.")
         if eval:
             self.load_model()
@@ -792,7 +791,7 @@ class Trainer:
         self.model.eval()
 
     
-    def fit_reducer(self, data:torch.Tensor, output_metric:str='euclidean', n_neighbors=100):
+    def fit_reducer(self, data:torch.Tensor, output_metric:str='euclidean', n_neighbors=15):
         reducer = umap.UMAP(output_metric=output_metric, n_neighbors=n_neighbors)
         if  isinstance(self.manifold, PoincareBall) :
             data = self.manifold.expmap0(data)
@@ -806,7 +805,7 @@ class Trainer:
 
 
     @torch.no_grad()
-    def visualize_hyperbolic(self, reducer:umap.UMAP, data:torch.Tensor, labels=None, size=10):
+    def visualize_hyperbolic(self, reducer:umap.UMAP, data:torch.Tensor, preds:torch.Tensor=None,labels:torch.Tensor=None, size:int=10, use_label=False):
         """ Plots hyperbolic data on Poincaré ball and tangent space 
 
         Note: This function only supports curvature k=1.
@@ -814,20 +813,17 @@ class Trainer:
 
         fig = plt.figure(figsize=(14, 7))
         ax = fig.add_subplot(1,2,1)
-        if labels is not None:
-            labels = labels.cpu()
+        c_label = labels.cpu() if use_label else preds.cpu()
         lorentz = CustomLorentz(k=1) 
         if  isinstance(self.manifold, PoincareBall) :
             data = self.manifold.expmap0(data)
             self.manifold.assert_check_point_on_manifold(data)
             data = poincare_to_lorentz(data, torch.abs(self.manifold.k)).cpu()
-            # print(data)
         data = reducer.transform(data.cpu().numpy())
         data = lorentz.add_time(torch.tensor(data).to(self.device))
         data_P = lorentz_to_poincare(data, k=torch.abs(self.manifold.k)).cpu()
-        ax = fig.add_subplot(1,2,1)
         
-        plt.scatter(data_P[:,0], data_P[:,1], c=labels, s=size, cmap='coolwarm', alpha=0.5)
+        plt.scatter(data_P[:,0], data_P[:,1], c=c_label, s=size, cmap='coolwarm', alpha=0.5)
         # Add legend
         plt.colorbar(label="Labels")
         plt.legend()
@@ -880,12 +876,12 @@ class Trainer:
         # ax.set_title("Tangent Space")
         return fig
 
-    def visualize_euclid(self, reducer:umap.UMAP, data:torch.Tensor, labels=None, size=10, ):
+    def visualize_euclid(self, reducer:umap.UMAP, data:torch.Tensor, preds:torch.Tensor=None,labels:torch.Tensor=None, size:int=10, use_label=False):
         data = data.cpu()
         data = reducer.transform(data)
         fig = plt.figure(figsize=(14, 7))
         ax = fig.add_subplot(1,2,1)
-        plt.scatter(data[:,0], data[:,1], c=labels.cpu(), s=size, cmap='coolwarm')
+        plt.scatter(data[:,0], data[:,1], c=labels.cpu() if use_label else preds.cpu(), s=size, cmap='coolwarm')
         ax.set_aspect('equal', adjustable='box')
         plt.xlabel("$z_0$")
         plt.ylabel("$z_1$")
@@ -908,19 +904,27 @@ class Trainer:
         labels = []
         sent_labels= []
         word_labels= []
+        pred_labels= []
+        pred_sent_labels= []
+        pred_word_labels= []
 
         for i, sample in enumerate(self.dataloaders["val"]):
             content, comment, _,label, _ = sample
-            word_s, word_c, sent_s , sent_c, co_s, co_c, co_sc, a_s, a_c = self.model.forward_features(
+            word_s, word_c, sent_s , sent_c, co_s, co_c, co_sc, preds = self.model.forward_features(
                 content=content, comment=comment 
             )  # As and Ac are the attention weights we are returning
 
             label = label.argmax(dim=-1)
+            batch_idx = torch.arange(label.shape[0])
+            preds = preds[batch_idx, 1] 
             labels.append(label)
+            pred_labels.append(preds)
             # print(label.shape)
             # print(label[..., None].expand(s.shape[0],s.shape[1]).shape)
             sent_labels.append(label[..., None].expand(sent_s.shape[0], sent_s.shape[1]))
             word_labels.append(label[..., None, None].expand(word_s.shape[0], word_s.shape[1], word_s.shape[2]))
+            pred_sent_labels.append(preds[..., None].expand(sent_s.shape[0], sent_s.shape[1]))
+            pred_word_labels.append(preds[..., None, None].expand(word_s.shape[0], word_s.shape[1], word_s.shape[2]))
             sent_s_all.append(sent_s.view(-1,sent_s.shape[-1]))
             sent_c_all.append(sent_c.view(-1,sent_c.shape[-1]))
             word_s_all.append(word_s.view(-1,word_s.shape[-1]))
@@ -938,31 +942,34 @@ class Trainer:
         co_all = torch.cat(co_all, dim=0)# gpu or cpu
 
         labels = torch.cat(labels) # cpu
+        pred_labels = torch.cat(pred_labels) # cpu
         sent_labels = torch.cat(sent_labels) # cpu
         word_labels = torch.cat(word_labels) # cpu
+        pred_sent_labels = torch.cat(pred_sent_labels) # cpu
+        pred_word_labels = torch.cat(pred_word_labels) # cpu
 
-        print('sent_labels', sent_labels.shape)
-        print('word_labels', word_labels.shape)
-        print('sent_s_all', sent_s_all.shape)
-        print('sent_c_all', sent_c_all.shape)
-        print('word_s_all', word_s_all.shape)
-        print('word_c_all', word_c_all.shape)
-        print('co_s_all', co_s_all.shape)
-        print('co_c_all', co_c_all.shape)
-        print('co_all', co_all.shape)
-        print('labels', labels.shape)   
+        # print('sent_labels', sent_labels.shape)
+        # print('word_labels', word_labels.shape)
+        # print('sent_s_all', sent_s_all.shape)
+        # print('sent_c_all', sent_c_all.shape)
+        # print('word_s_all', word_s_all.shape)
+        # print('word_c_all', word_c_all.shape)
+        # print('co_s_all', co_s_all.shape)
+        # print('co_c_all', co_c_all.shape)
+        # print('co_all', co_all.shape)
+        # print('labels', labels.shape)   
         
         print('fitting document-level reducer')
         output_metric = 'hyperboloid' if self.manifold_name != EUCLID else 'euclidean'
         doc_level_reducer = self.fit_reducer(co_all, output_metric=output_metric)
 
         print('fitting sent-level reducer')
-        co_sent_level_reducer = self.fit_reducer(torch.cat([co_c_all, co_s_all], dim=0), output_metric=output_metric)
+        # co_sent_level_reducer = self.fit_reducer(torch.cat([co_c_all, co_s_all], dim=0), output_metric=output_metric)
         sent_level_reducer = self.fit_reducer(torch.cat([sent_s_all, sent_c_all], dim=0), output_metric=output_metric)  
 
         print('fitting word-level reducer')
-        word_embeds = torch.cat([word_s_all, word_c_all])
-        if isinstance(self.manifold, PoincareBall) or isinstance(self.manifold, CustomLorentz):
+        # word_embeds = torch.cat([word_s_all, word_c_all])
+        if isinstance(self.manifold, CustomLorentz):
             # clip_r = 2.0 
             # if isinstance(self.manifold, PoincareBall):
             #     x_norm = torch.norm(word_embeds, dim=-1, keepdim=True) + 1e-5
@@ -976,21 +983,29 @@ class Trainer:
             #     word_embeds = F.pad(word_embeds, (1,0), "constant", 0)
             #     word_embeds = self.manifold.expmap0(word_embeds)
             # word_level_reducer = self.fit_reducer(word_embeds, output_metric='hyperboloid')
-            fig_co = self.visualize_hyperbolic(doc_level_reducer, co_all, labels, size=100)
-            fig_co_s = self.visualize_hyperbolic(co_sent_level_reducer, torch.cat([co_s_all]), torch.cat([labels]), size=50)
-            fig_co_c = self.visualize_hyperbolic(co_sent_level_reducer, torch.cat([co_c_all]), torch.cat([labels]), size=50)
-            fig_sent_s = self.visualize_hyperbolic(sent_level_reducer, torch.cat([sent_s_all]),  torch.cat([sent_labels]), size=10)
-            fig_sent_c = self.visualize_hyperbolic(sent_level_reducer, torch.cat([sent_c_all]),  torch.cat([sent_labels]), size=10)
-            # fig_word = self.visualize_hyperbolic(word_level_reducer, word_embeds, torch.cat([word_labels, word_labels]), size=1)
+            fig_co = self.visualize_hyperbolic(doc_level_reducer, data=co_all, preds=pred_labels,labels=labels, size=50, use_label=True)
+            fig_co_truth = self.visualize_hyperbolic(doc_level_reducer, data=co_all, preds=pred_labels,labels=labels, size=50, use_label=False)
+            # fig_co_s = self.visualize_hyperbolic(co_sent_level_reducer, data=torch.cat([co_s_all]), preds=pred_labels,labels=torch.cat([labels]), size=50)
+            # fig_co_c = self.visualize_hyperbolic(co_sent_level_reducer, data=torch.cat([co_c_all]), preds=pred_labels,labels=torch.cat([labels]), size=50)
+            fig_sent_s = self.visualize_hyperbolic(sent_level_reducer, data=torch.cat([sent_s_all]), preds=pred_sent_labels,labels=torch.cat([sent_labels]), size=10)
+            fig_sent_c = self.visualize_hyperbolic(sent_level_reducer, data=torch.cat([sent_c_all]),  preds=pred_sent_labels,labels=torch.cat([sent_labels]), size=10)
+        elif isinstance(self.manifold, PoincareBall):
+            fig_co = self.visualize_euclid(doc_level_reducer, data=co_all, labels=labels, preds=pred_labels,size=50, use_label=True)
+            fig_co_truth = self.visualize_euclid(doc_level_reducer, data=co_all, preds=pred_labels,labels=labels, size=50, use_label=False)
+            # fig_co_s = self.visualize_euclid(co_sent_level_reducer, data=torch.cat([co_s_all]), preds=pred_labels,labels=torch.cat([labels]), size=50)
+            # fig_co_c = self.visualize_euclid(co_sent_level_reducer, data=torch.cat([co_c_all]), preds=pred_labels,labels=torch.cat([labels]), size=50)
+            fig_sent_s = self.visualize_euclid(sent_level_reducer, data=torch.cat([sent_s_all]), preds=pred_sent_labels, labels=torch.cat([sent_labels]), size=10)
+            fig_sent_c = self.visualize_euclid(sent_level_reducer, data=torch.cat([sent_c_all]),  preds=pred_sent_labels, labels=torch.cat([sent_labels]), size=10)
         else:
             # Plot Euclidean embeddings
             print('fitting word-level reducer')
-            fig_co = self.visualize_euclid(doc_level_reducer, co_all, labels, size=100)
-            fig_co_s = self.visualize_euclid(co_sent_level_reducer, torch.cat([co_s_all]), torch.cat([labels]), size=50)
-            fig_co_c = self.visualize_euclid(co_sent_level_reducer, torch.cat([co_c_all]), torch.cat([labels]), size=50)
+            fig_co = self.visualize_euclid(doc_level_reducer, co_all, labels, size=50)
+            fig_co_truth = self.visualize_euclid(doc_level_reducer, data=co_all, preds=pred_labels,labels=labels, size=50, use_label=False)
+            # fig_co_s = self.visualize_euclid(co_sent_level_reducer, torch.cat([co_s_all]), torch.cat([labels]), size=50)
+            # fig_co_c = self.visualize_euclid(co_sent_level_reducer, torch.cat([co_c_all]), torch.cat([labels]), size=50)
             fig_sent_s = self.visualize_euclid(sent_level_reducer, torch.cat([sent_s_all]),  torch.cat([sent_labels]), size=10)
             fig_sent_c = self.visualize_euclid(sent_level_reducer, torch.cat([sent_c_all]),  torch.cat([sent_labels]), size=10)
-            # fig_word = self.visualize_euclid(word_level_reducer, word_embeds, torch.cat([word_labels]), size=1)
                 
-        return fig_co, fig_co_s, fig_co_c, fig_sent_s, fig_sent_c 
+        # return fig_co, fig_co_s, fig_co_c, fig_sent_s, fig_sent_c 
+        return fig_co, fig_co_truth
         # return fig_word
